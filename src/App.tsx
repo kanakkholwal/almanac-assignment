@@ -31,7 +31,6 @@ import type {
   ModelOption,
   TimelineItem,
   WindowMode,
-  WindowState,
 } from "@shared/ipc";
 import { timelineItemSchema } from "@shared/ipc";
 import { SEEDED_TIMELINE } from "@shared/mock-data";
@@ -170,7 +169,6 @@ function Banner({
 
 export default function App() {
   const [windowMode, setWindowMode] = useState<WindowMode>("compact");
-  const [windowState, setWindowState] = useState<WindowState | null>(null);
   const [runtimeInfo, setRuntimeInfo] = useState<AppRuntimeInfo | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>(() => loadSeedTimeline());
   const [input, setInput] = useState("");
@@ -228,7 +226,6 @@ export default function App() {
       .then(([runtime, state, available]) => {
         if (!active) return;
         setRuntimeInfo(runtime);
-        setWindowState(state);
         setWindowMode(state.mode);
         setAlwaysOnTop(state.alwaysOnTop);
         setModels(available);
@@ -291,7 +288,6 @@ export default function App() {
 
     const unsubscribeApp = almanac.onAppEvent((event) => {
       if (event.type === "window-state") {
-        setWindowState(event.state);
         setWindowMode(event.state.mode);
         setAlwaysOnTop(event.state.alwaysOnTop);
       }
@@ -435,33 +431,65 @@ export default function App() {
   const isBusy = captureState === "streaming" || captureState === "transcribing";
   const inputDisabled = isBusy;
 
+  const morphTransition = { type: "spring" as const, stiffness: 320, damping: 34 };
+
+  const CARD_SIZES: Record<WindowMode, { width: number; height: number }> = {
+    compact: { width: 220, height: 176 },
+    notes: { width: 96, height: 232 },
+    expanded: { width: 1120, height: 560 },
+  };
+  const cardSize = CARD_SIZES[windowMode];
+
   return (
-    <div className="h-screen w-screen bg-transparent">
+    <div className="fixed inset-0 flex justify-center pt-2">
+      <motion.div
+        animate={{ width: cardSize.width, height: cardSize.height }}
+        initial={false}
+        transition={morphTransition}
+        style={{ width: cardSize.width, height: cardSize.height }}
+      >
       <AnimatePresence mode="popLayout" initial={false}>
         {windowMode === "notes" ? (
-          <Suspense key="notes" fallback={<LazyFallback />}>
-            <NotesPill
-              recording={captureState === "listening"}
-              onStop={stopNotes}
-              onOpenChat={() => setWindowMode("expanded")}
-            />
-          </Suspense>
-        ) : windowMode === "compact" ? (
-          <Suspense key="compact" fallback={<LazyFallback />}>
-            <CompactLauncher
-              onCapture={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
-              onOpenChat={() => setWindowMode("expanded")}
-              modKey={modKey}
-            />
-          </Suspense>
-        ) : (
           <motion.div
-            key="expanded"
-            layoutId="alma-shell"
+            key="notes"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ type: "spring", stiffness: 340, damping: 32 }}
+            transition={{ duration: 0.14 }}
+            className="h-full w-full"
+          >
+            <Suspense fallback={<LazyFallback />}>
+              <NotesPill
+                recording={captureState === "listening"}
+                onStop={stopNotes}
+                onOpenChat={() => setWindowMode("expanded")}
+              />
+            </Suspense>
+          </motion.div>
+        ) : windowMode === "compact" ? (
+          <motion.div
+            key="compact"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14 }}
+            className="h-full w-full"
+          >
+            <Suspense fallback={<LazyFallback />}>
+              <CompactLauncher
+                onCapture={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
+                onOpenChat={() => setWindowMode("expanded")}
+                modKey={modKey}
+              />
+            </Suspense>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="expanded"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14 }}
             className="surface-card relative flex h-full w-full flex-col overflow-hidden rounded-sm"
           >
         <header
@@ -598,6 +626,7 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+      </motion.div>
     </div>
   );
 }

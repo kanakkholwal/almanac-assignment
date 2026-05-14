@@ -11,28 +11,11 @@ import type { WindowMode, WindowState } from "../shared/ipc";
 
 import type { PersistedWindowState } from "./window-state";
 
-export const WINDOW_SIZES: Record<WindowMode, { width: number; height: number }> = {
-  compact: { width: 220, height: 176 },
-  notes: { width: 96, height: 232 },
-  expanded: { width: 760, height: 620 },
-};
+// The window is a transparent fixed-size stage sized to fit the largest mode's
+// card with a small margin. The visible card morphs inside via framer-motion;
+// the OS window never resizes on mode change.
 
-export function getInitialPosition(
-  mode: WindowMode,
-  size: { width: number; height: number },
-): { x: number; y: number } {
-  const workArea = screen.getPrimaryDisplay().workArea;
-  if (mode === "compact" || mode === "notes") {
-    return {
-      x: workArea.x + Math.round((workArea.width - size.width) / 2),
-      y: workArea.y + 16,
-    };
-  }
-  return {
-    x: workArea.x + Math.round(workArea.width - size.width - 24),
-    y: workArea.y + 24,
-  };
-}
+const STAGE = { width: 1200, height: 640 } as const;
 
 function resolveRendererUrl(): string {
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -62,33 +45,30 @@ export function getAppIcon() {
 }
 
 export function createMainWindow(initialState: PersistedWindowState): BrowserWindowType {
-  const size = WINDOW_SIZES[initialState.mode];
+  const workArea = screen.getPrimaryDisplay().workArea;
   const isWin = process.platform === "win32";
   const isMac = process.platform === "darwin";
-  const isFloating = initialState.mode === "compact" || initialState.mode === "notes";
 
-  const fallbackPos = getInitialPosition(initialState.mode, size);
-  const x = isFloating ? fallbackPos.x : initialState.bounds.x || fallbackPos.x;
-  const y = isFloating ? fallbackPos.y : initialState.bounds.y || fallbackPos.y;
-
-  const width = isFloating ? size.width : initialState.bounds.width || size.width;
-  const height = isFloating ? size.height : initialState.bounds.height || size.height;
+  const width = Math.min(STAGE.width, workArea.width - 24);
+  const height = Math.min(STAGE.height, workArea.height - 24);
+  const x = workArea.x + Math.round((workArea.width - width) / 2);
+  const y = workArea.y + 16;
 
   const win = new BrowserWindow({
     width,
     height,
-    minWidth: 80,
-    minHeight: 80,
     x,
     y,
     frame: false,
     transparent: true,
-    resizable: true,
-    maximizable: !isFloating,
+    resizable: false,
+    movable: true,
+    maximizable: false,
     minimizable: true,
+    fullscreenable: false,
     hasShadow: false,
     roundedCorners: false,
-    skipTaskbar: isFloating,
+    skipTaskbar: true,
     titleBarStyle: isMac ? "hiddenInset" : "default",
     ...(isWin ? { backgroundMaterial: "none" as const } : {}),
     icon: createTrayIcon(),
@@ -111,82 +91,15 @@ export function createMainWindow(initialState: PersistedWindowState): BrowserWin
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.setAlwaysOnTop(initialState.alwaysOnTop, "screen-saver");
 
-  if (initialState.isMaximized) {
-    win.maximize();
-  }
-
   win.once("ready-to-show", () => win.show());
 
   return win;
 }
 
-let activeResize: NodeJS.Timeout | null = null;
-
-export function animateBounds(
-  win: BrowserWindowType,
-  target: { x: number; y: number; width: number; height: number },
-  durationMs = 220,
-): void {
-  if (!win || win.isDestroyed()) return;
-  if (activeResize) {
-    clearInterval(activeResize);
-    activeResize = null;
-  }
-
-  const start = win.getBounds();
-  const startTime = Date.now();
-  const frameMs = 1000 / 60;
-
-  activeResize = setInterval(() => {
-    if (!win || win.isDestroyed()) {
-      if (activeResize) clearInterval(activeResize);
-      activeResize = null;
-      return;
-    }
-    const elapsed = Date.now() - startTime;
-    const t = Math.min(1, elapsed / durationMs);
-    const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-
-    win.setBounds({
-      x: Math.round(start.x + (target.x - start.x) * eased),
-      y: Math.round(start.y + (target.y - start.y) * eased),
-      width: Math.round(start.width + (target.width - start.width) * eased),
-      height: Math.round(start.height + (target.height - start.height) * eased),
-    });
-
-    if (t >= 1) {
-      if (activeResize) clearInterval(activeResize);
-      activeResize = null;
-      win.setBounds(target);
-    }
-  }, frameMs);
-}
-
-export function applyWindowMode(win: BrowserWindowType, mode: WindowMode): void {
-  if (win.isMaximized()) return;
-
-  const size = WINDOW_SIZES[mode];
-  const isFloating = mode === "compact" || mode === "notes";
-
-  let target: { x: number; y: number; width: number; height: number };
-  if (isFloating) {
-    target = { ...getInitialPosition(mode, size), width: size.width, height: size.height };
-  } else {
-    const bounds = win.getBounds();
-    const workArea = screen.getPrimaryDisplay().workArea;
-    const x = Math.min(bounds.x, workArea.x + workArea.width - size.width - 12);
-    const y = Math.min(bounds.y, workArea.y + workArea.height - size.height - 12);
-    target = {
-      x: Math.max(workArea.x + 12, x),
-      y: Math.max(workArea.y + 12, y),
-      width: size.width,
-      height: size.height,
-    };
-  }
-
-  win.setMaximizable(!isFloating);
-  win.setSkipTaskbar(isFloating);
-  animateBounds(win, target);
+// Mode no longer drives OS-level resize — framer-motion morphs the inner card.
+// Retained for IPC compatibility; the renderer just owns the active mode.
+export function applyWindowMode(_win: BrowserWindowType, _mode: WindowMode): void {
+  // intentional no-op: rendering is handled in the renderer
 }
 
 export function getWindowState(
@@ -197,7 +110,7 @@ export function getWindowState(
   return {
     mode,
     alwaysOnTop,
-    isMaximized: win.isMaximized(),
+    isMaximized: false,
     isVisible: win.isVisible(),
   };
 }

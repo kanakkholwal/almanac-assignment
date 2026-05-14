@@ -36,11 +36,11 @@ export function CompactLauncher({
 
   return (
     <motion.div
-      layoutId="alma-shell"
       data-drag-region="true"
-      initial={{ opacity: 0, y: 4, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ type: "spring", stiffness: 380, damping: 30 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.14 }}
       className="surface-card flex h-full w-full flex-col justify-between gap-3 rounded-sm p-4"
     >
       <div className="flex flex-col gap-2.5">
