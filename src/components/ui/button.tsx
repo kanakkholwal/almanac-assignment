@@ -5,39 +5,36 @@ import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
   [
-    "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium",
-    "transition-[background,color,box-shadow,transform] duration-150 ease-out",
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-pill border font-sans text-[13px] font-normal",
+    "transition-colors duration-150 ease-out",
     "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-    "disabled:pointer-events-none disabled:opacity-50",
-    "active:scale-[0.97]",
-    "[&_svg]:shrink-0 [&_svg]:size-4",
+    "disabled:pointer-events-none disabled:opacity-40",
+    "[&_svg]:shrink-0 [&_svg]:size-[15px]",
   ].join(" "),
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
-        secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "bg-transparent border-border text-foreground hover:bg-white/[0.04]",
+        primary:
+          "bg-primary border-primary text-primary-foreground hover:bg-white/90",
         outline:
-          "border border-border bg-transparent text-foreground hover:bg-muted",
+          "bg-transparent border-border text-foreground hover:bg-white/[0.04]",
+        secondary:
+          "bg-secondary border-transparent text-foreground hover:bg-white/[0.08]",
         ghost:
-          "text-foreground/80 hover:bg-white/[0.06] hover:text-foreground",
-        glass:
-          "glass-chip text-foreground hover:bg-white/[0.1]",
-        accent:
-          "bg-accent text-accent-foreground shadow-sm hover:bg-accent/90",
+          "bg-transparent border-transparent text-foreground/85 hover:bg-white/[0.06] hover:text-foreground",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+          "bg-transparent border-destructive/60 text-destructive hover:bg-destructive/10",
         link:
-          "text-primary underline-offset-4 hover:underline",
+          "bg-transparent border-transparent text-foreground underline-offset-4 hover:underline",
       },
       size: {
-        default: "h-9 px-4",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-6",
-        icon: "size-8",
-        "icon-sm": "size-7 [&_svg]:size-[14px]",
+        default: "h-8 px-4",
+        sm: "h-7 px-3 text-[12px]",
+        lg: "h-9 px-5",
+        icon: "size-8 px-0",
+        "icon-sm": "size-7 px-0 [&_svg]:size-[14px]",
       },
     },
     defaultVariants: {

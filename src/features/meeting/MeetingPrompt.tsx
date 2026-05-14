@@ -39,10 +39,10 @@ export function MeetingPrompt({ prompt, onStart, onDismiss }: MeetingPromptProps
               onDismiss();
             }}
             className={cn(
-              "absolute -left-2.5 -top-2.5 z-10 flex size-6 items-center justify-center rounded-full",
-              "border border-border bg-card text-muted-foreground shadow-md",
-              "transition-colors hover:bg-muted hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "absolute -left-2.5 -top-2.5 z-10 flex size-6 items-center justify-center rounded-pill border border-border",
+              "bg-canvas-card text-foreground/70",
+              "transition-colors hover:bg-canvas-soft hover:text-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             )}
           >
             <X className="size-3" />
@@ -50,32 +50,27 @@ export function MeetingPrompt({ prompt, onStart, onDismiss }: MeetingPromptProps
 
           <div
             className={cn(
-              "relative w-130 max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border border-border",
-              "bg-card shadow-elevated",
+              "surface-card relative w-130 max-w-[calc(100vw-32px)] overflow-hidden rounded-sm",
             )}
-            style={{
-              backgroundImage:
-                "radial-gradient(120% 100% at 80% 100%, oklch(0.55 0.18 280 / 0.22), transparent 60%)",
-            }}
           >
-            <div className="flex items-center gap-3 px-3 py-3">
+            <div className="flex items-center gap-3 px-4 py-3">
               <AlmaAvatar size={40} />
               <div className="min-w-0 flex-1">
-                <div className="text-[14px] font-semibold leading-tight tracking-tight text-foreground">
+                <div className="font-sans text-[14px] tracking-tight text-foreground">
                   {prompt.title}
                 </div>
-                <p className="mt-0.5 text-[12.5px] leading-snug text-muted-foreground">
+                <p className="mt-0.5 font-sans text-[12.5px] leading-snug text-muted-foreground">
                   {prompt.description}
                 </p>
               </div>
 
-              <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white/4">
+              <div className="flex items-stretch overflow-hidden rounded-pill border border-border">
                 <button
                   onClick={onStart}
                   className={cn(
-                    "px-3 text-[13px] font-medium text-foreground",
-                    "transition-colors hover:bg-white/6",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                    "px-4 font-sans text-[13px] text-foreground transition-colors",
+                    "hover:bg-white/4",
+                    "focus-visible:outline-none focus-visible:bg-white/4",
                   )}
                 >
                   {prompt.actionLabel}
@@ -86,9 +81,9 @@ export function MeetingPrompt({ prompt, onStart, onDismiss }: MeetingPromptProps
                   aria-expanded={menuOpen}
                   onClick={() => setMenuOpen((v) => !v)}
                   className={cn(
-                    "flex w-7 items-center justify-center text-muted-foreground",
-                    "transition-colors hover:bg-white/6 hover:text-foreground",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                    "flex w-8 items-center justify-center text-foreground/70 transition-colors",
+                    "hover:bg-white/4 hover:text-foreground",
+                    "focus-visible:outline-none focus-visible:bg-white/4",
                   )}
                 >
                   <ChevronUp
@@ -107,8 +102,7 @@ export function MeetingPrompt({ prompt, onStart, onDismiss }: MeetingPromptProps
                 exit={{ opacity: 0, y: -4, scale: 0.98 }}
                 transition={{ duration: 0.14 }}
                 className={cn(
-                  "absolute right-3 top-[calc(100%+6px)] w-45 overflow-hidden rounded-lg border border-border",
-                  "bg-popover shadow-elevated",
+                  "surface-card absolute right-3 top-[calc(100%+6px)] w-45 overflow-hidden rounded-sm",
                 )}
                 role="menu"
               >
@@ -119,7 +113,7 @@ export function MeetingPrompt({ prompt, onStart, onDismiss }: MeetingPromptProps
                     onDismiss();
                   }}
                 />
-                <div className="h-px bg-border" />
+                <div className="h-px bg-hairline" />
                 <MenuItem
                   label="Turn off notifications"
                   onClick={() => {
@@ -142,9 +136,9 @@ function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
       role="menuitem"
       onClick={onClick}
       className={cn(
-        "block w-full px-3 py-2 text-left text-[13px] text-foreground",
-        "transition-colors hover:bg-white/6",
-        "focus-visible:outline-none focus-visible:bg-white/6",
+        "block w-full px-4 py-2.5 text-left font-sans text-[13px] text-foreground transition-colors",
+        "hover:bg-white/4",
+        "focus-visible:outline-none focus-visible:bg-white/4",
       )}
     >
       {label}

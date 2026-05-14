@@ -124,23 +124,11 @@ type BannerTone = "warning" | "info" | "error";
 
 const BANNER_TOKENS: Record<
   BannerTone,
-  { wrapper: string; icon: typeof AlertCircle; iconClass: string }
+  { icon: typeof AlertCircle; iconClass: string }
 > = {
-  warning: {
-    wrapper: "border-accent/25 bg-accent/10 text-accent-foreground",
-    icon: TriangleAlert,
-    iconClass: "text-accent",
-  },
-  info: {
-    wrapper: "border-border bg-card/70 text-foreground/85",
-    icon: CheckCircle2,
-    iconClass: "text-primary",
-  },
-  error: {
-    wrapper: "border-destructive/30 bg-destructive/10 text-destructive-foreground",
-    icon: AlertCircle,
-    iconClass: "text-destructive",
-  },
+  warning: { icon: TriangleAlert, iconClass: "text-foreground/80" },
+  info: { icon: CheckCircle2, iconClass: "text-foreground/80" },
+  error: { icon: AlertCircle, iconClass: "text-destructive" },
 };
 
 function Banner({
@@ -162,8 +150,7 @@ function Banner({
       transition={{ duration: 0.18 }}
       role={tone === "error" ? "alert" : "status"}
       className={cn(
-        "mb-2 flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs",
-        tokens.wrapper,
+        "mb-2 flex items-center gap-2.5 rounded-sm border border-hairline bg-canvas-soft px-3 py-2 text-xs text-foreground/85",
       )}
     >
       <Icon className={cn("size-3.5 shrink-0", tokens.iconClass)} />
@@ -172,7 +159,7 @@ function Banner({
         <button
           aria-label="Dismiss"
           onClick={onDismiss}
-          className="-mr-1 flex size-5 items-center justify-center rounded text-current/70 transition hover:bg-white/10 hover:text-current"
+          className="-mr-1 flex size-5 items-center justify-center rounded-pill text-foreground/60 transition hover:bg-white/6 hover:text-foreground"
         >
           <X className="size-3" />
         </button>
@@ -485,11 +472,11 @@ export default function App() {
     <div className="h-screen w-screen bg-transparent">
       <motion.div
         layoutId="alma-shell"
-        className="glass-panel relative flex h-full w-full flex-col overflow-hidden rounded-2xl"
+        className="surface-card relative flex h-full w-full flex-col overflow-hidden rounded-sm"
       >
         <header
           data-drag-region="true"
-          className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border/60 px-4 py-2.5"
+          className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-hairline px-4 py-3"
         >
           <div className="flex items-center" data-no-drag="true">
             <ShortcutAction
@@ -507,13 +494,13 @@ export default function App() {
             />
           </div>
 
-          <div className="flex items-center justify-end gap-0.5" data-no-drag="true">
+          <div className="flex items-center justify-end gap-1.5" data-no-drag="true">
             <Button
               aria-label="Toggle voice output"
               aria-pressed={speechEnabled}
               onClick={() => setSpeechEnabled((v) => !v)}
               size="icon-sm"
-              variant={speechEnabled ? "default" : "ghost"}
+              variant={speechEnabled ? "outline" : "ghost"}
               title="Voice output"
             >
               <Headphones />
@@ -536,7 +523,7 @@ export default function App() {
                 void window.almanac?.setAlwaysOnTop(next);
               }}
               size="icon-sm"
-              variant="ghost"
+              variant={alwaysOnTop ? "outline" : "ghost"}
               title="Always on top"
             >
               <Pin />
@@ -554,23 +541,23 @@ export default function App() {
         </header>
 
         <div className="relative flex flex-1 flex-col overflow-hidden">
-          <div className="relative z-10 flex h-full flex-col px-3 pb-3 sm:px-5 sm:pb-4">
-            <div className="flex items-center justify-center gap-2 py-3 text-[12.5px] text-foreground/70">
-              <span>Today, {currentTime}</span>
+          <div className="relative z-10 flex h-full flex-col px-5 pb-4">
+            <div className="flex items-center justify-center gap-3 py-4">
+              <span className="eyebrow">Today · {currentTime}</span>
               {captureState === "listening" ? (
-                <StatusPill tone="success">
-                  <span className="size-1.5 animate-pulse rounded-full bg-success" />
-                  Listening…
+                <StatusPill>
+                  <span className="size-1.5 animate-pulse rounded-pill bg-foreground" />
+                  Listening
                 </StatusPill>
               ) : captureState === "transcribing" ? (
-                <StatusPill tone="info">
+                <StatusPill>
                   <LoaderCircle className="size-3 animate-spin" />
-                  Transcribing…
+                  Transcribing
                 </StatusPill>
               ) : captureState === "streaming" ? (
-                <StatusPill tone="info">
+                <StatusPill>
                   <LoaderCircle className="size-3 animate-spin" />
-                  Thinking…
+                  Thinking
                 </StatusPill>
               ) : null}
             </div>
@@ -617,14 +604,14 @@ export default function App() {
             />
 
             {runtimeInfo ? (
-              <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10.5px] text-muted-foreground/70">
-                <span>{platformLabel}</span>
-                <span aria-hidden>·</span>
-                <span>v{runtimeInfo.appVersion}</span>
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <span className="eyebrow">{platformLabel}</span>
+                <span className="eyebrow" aria-hidden>·</span>
+                <span className="eyebrow">v{runtimeInfo.appVersion}</span>
                 {runtimeInfo.config.apiKeyPresent ? null : (
                   <>
-                    <span aria-hidden>·</span>
-                    <span className="text-muted-foreground/90">no API key</span>
+                    <span className="eyebrow" aria-hidden>·</span>
+                    <span className="eyebrow">No API Key</span>
                   </>
                 )}
               </div>
@@ -650,11 +637,12 @@ const Composer = memo(
     }) {
       const { value, disabled, recording, busy, busyState, onChange, onSubmit, onToggleRecord } =
         props;
+      const canSend = Boolean(value.trim()) && !busy;
       return (
         <div
           className={cn(
-            "relative flex items-center gap-1.5 rounded-full border border-border bg-white/5 py-1.5 pl-5 pr-1.5",
-            "transition-colors focus-within:border-white/15 focus-within:bg-white/8",
+            "relative flex items-center gap-1 rounded-pill border border-border bg-transparent py-1 pl-5 pr-1",
+            "transition-colors focus-within:border-white/30",
           )}
         >
           <textarea
@@ -664,7 +652,7 @@ const Composer = memo(
             maxLength={2000}
             rows={1}
             value={value}
-            placeholder="Type your message..."
+            placeholder="Type your message"
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -673,9 +661,9 @@ const Composer = memo(
               }
             }}
             className={cn(
-              "max-h-28 min-h-7 flex-1 resize-none border-0 bg-transparent py-1",
-              "text-[14px] leading-6 text-foreground outline-none",
-              "placeholder:text-foreground/55",
+              "max-h-28 min-h-7 flex-1 resize-none border-0 bg-transparent py-1.5",
+              "font-sans text-[14px] leading-6 text-foreground outline-none",
+              "placeholder:text-muted-foreground",
               "disabled:cursor-not-allowed disabled:opacity-60",
             )}
           />
@@ -685,10 +673,7 @@ const Composer = memo(
             onClick={onToggleRecord}
             size="icon"
             variant="ghost"
-            className={cn(
-              "rounded-full",
-              recording && "animate-pulse-ring text-destructive",
-            )}
+            className={cn(recording && "animate-pulse-ring text-destructive")}
           >
             {busyState === "transcribing" || busyState === "streaming" ? (
               <LoaderCircle className="animate-spin" />
@@ -698,11 +683,10 @@ const Composer = memo(
           </Button>
           <Button
             aria-label="Send message"
-            disabled={!value.trim() || busy}
+            disabled={!canSend}
             onClick={onSubmit}
             size="icon"
-            variant="accent"
-            className="rounded-full"
+            variant={canSend ? "primary" : "outline"}
           >
             <SendHorizonal />
           </Button>
@@ -728,13 +712,14 @@ function ShortcutAction({
       data-no-drag="true"
       onClick={onClick}
       className={cn(
-        "group inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-foreground",
-        "transition-colors hover:bg-white/6",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "inline-flex items-center gap-2 rounded-pill border border-border bg-transparent px-3 py-1.5",
+        "font-sans text-[13px] text-foreground transition-colors",
+        "hover:bg-white/4",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
       )}
     >
       <span>{label}</span>
-      <span className="flex items-center gap-0.5">
+      <span className="flex items-center gap-1">
         {keys.map((k) => (
           <Kbd key={k}>{k}</Kbd>
         ))}
@@ -743,20 +728,12 @@ function ShortcutAction({
   );
 }
 
-function StatusPill({
-  tone,
-  children,
-}: {
-  tone: "success" | "info" | "muted";
-  children: React.ReactNode;
-}) {
+function StatusPill({ children }: { children: React.ReactNode }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-        tone === "success" && "border-success/25 bg-success/10 text-success",
-        tone === "info" && "border-primary/25 bg-primary/10 text-primary",
-        tone === "muted" && "border-border bg-card/60 text-muted-foreground",
+        "inline-flex items-center gap-1.5 rounded-pill border border-border bg-transparent px-2 py-0.5",
+        "font-mono text-[10px] uppercase tracking-eyebrow text-foreground/85",
       )}
     >
       {children}

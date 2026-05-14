@@ -27,31 +27,25 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     if (!this.state.error) return this.props.children;
 
     return (
-      <div className="surface-ambient flex min-h-screen items-center justify-center p-6">
-        <div className="glass-panel w-full max-w-md rounded-2xl p-6">
-          <div className="flex items-center gap-3">
-            <div
-              aria-hidden
-              className="flex size-9 items-center justify-center rounded-lg bg-destructive/15 text-destructive"
-            >
-              <AlertTriangle className="size-4" />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-base font-semibold tracking-tight">
-                Something went wrong
-              </h1>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                The renderer process crashed. You can reload the window to recover.
-              </p>
-            </div>
+      <div className="flex min-h-screen items-center justify-center bg-background p-6">
+        <div className="surface-card w-full max-w-md rounded-sm p-6">
+          <div className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
+            <AlertTriangle className="size-3 text-destructive" />
+            Renderer Error
           </div>
+          <h1 className="font-sans text-[18px] tracking-tight text-foreground">
+            Something went wrong
+          </h1>
+          <p className="mt-2 font-sans text-[13px] leading-relaxed text-muted-foreground">
+            The renderer process crashed. Reload the window to recover.
+          </p>
 
-          <pre className="mt-4 max-h-40 overflow-auto rounded-lg border border-border bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-destructive-foreground/90">
+          <pre className="mt-4 max-h-40 overflow-auto rounded-sm border border-hairline bg-canvas-soft p-3 font-mono text-[11px] leading-relaxed text-foreground/80">
             {this.state.error.message}
           </pre>
 
           <div className="mt-4 flex justify-end">
-            <Button onClick={() => window.location.reload()} size="sm">
+            <Button onClick={() => window.location.reload()} size="sm" variant="outline">
               <RotateCcw />
               Reload window
             </Button>

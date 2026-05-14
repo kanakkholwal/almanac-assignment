@@ -20,7 +20,7 @@ function renderContent(content: string) {
       return (
         <a
           key={`link-${index}`}
-          className="wrap-break-word font-medium text-primary underline-offset-4 transition-colors hover:underline"
+          className="wrap-break-word text-foreground underline underline-offset-4 transition-colors hover:text-foreground/80"
           href={part}
           rel="noreferrer noopener"
           target="_blank"
@@ -35,15 +35,15 @@ function renderContent(content: string) {
 
 export function Transcript({ items }: TranscriptProps) {
   return (
-    <ol className="flex flex-col gap-4">
+    <ol className="flex flex-col gap-5">
       {items.map((item, index) => (
         <motion.li
           key={item.id}
-          initial={{ opacity: 0, y: 6 }}
+          initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{
-            delay: Math.min(index * 0.02, 0.18),
-            duration: 0.22,
+            delay: Math.min(index * 0.02, 0.16),
+            duration: 0.18,
             ease: "easeOut",
           }}
         >
@@ -69,7 +69,7 @@ export function Transcript({ items }: TranscriptProps) {
           ) : null}
 
           {item.kind === "status" ? (
-            <StatusDivider text={item.text} emphasis={item.emphasis} />
+            <StatusDivider text={item.text} />
           ) : null}
         </motion.li>
       ))}
@@ -88,20 +88,19 @@ function UserMessage({
     <div className="flex flex-col items-end">
       <div
         className={cn(
-          "max-w-[78%] rounded-2xl rounded-br-md px-3.5 py-2",
-          "bg-primary/90 text-primary-foreground shadow-sm",
-          "text-[13.5px] leading-6",
+          "max-w-[78%] rounded-sm border border-hairline bg-canvas-soft px-3.5 py-2",
+          "font-sans text-[14px] leading-6 text-foreground",
         )}
       >
         {renderContent(content)}
       </div>
       {status === "read" ? (
-        <div className="mt-1 flex items-center gap-1 pr-1 text-[10.5px] font-medium text-muted-foreground">
-          <CheckCheck className="size-3 text-primary" />
+        <div className="mt-1 flex items-center gap-1 pr-1 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
+          <CheckCheck className="size-3 text-foreground/70" />
           <span>Read</span>
         </div>
       ) : status ? (
-        <div className="mt-1 pr-1 text-[10.5px] font-medium text-muted-foreground capitalize">
+        <div className="mt-1 pr-1 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
           {status}
         </div>
       ) : null}
@@ -111,13 +110,13 @@ function UserMessage({
 
 function AssistantMessage({ content }: { content: string }) {
   return (
-    <div className="whitespace-pre-wrap wrap-break-word text-[14px] leading-7 text-foreground">
+    <div className="font-sans text-[14px] leading-7 text-foreground whitespace-pre-wrap wrap-break-word">
       {content ? (
         renderContent(content)
       ) : (
         <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-          <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-          thinking…
+          <span className="size-1.5 animate-pulse rounded-pill bg-foreground/70" />
+          thinking
         </span>
       )}
     </div>
@@ -127,10 +126,10 @@ function AssistantMessage({ content }: { content: string }) {
 function ThreadMessage({ label, preview }: { label: string; preview: string }) {
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className="max-w-[78%] rounded-2xl rounded-br-md border border-border bg-card/60 px-3.5 py-2 text-[13px] leading-6 text-foreground/85">
+      <div className="max-w-[78%] rounded-sm border border-hairline bg-canvas-soft px-3.5 py-2 font-sans text-[13.5px] leading-6 text-foreground/85">
         {preview}
       </div>
-      <div className="pr-1 text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+      <div className="pr-1 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
         {label}
       </div>
     </div>
@@ -149,15 +148,15 @@ function Suggestion({
   secondaryLabel?: string;
 }) {
   return (
-    <div className="max-w-[82%] rounded-2xl border border-border bg-card/70 p-3.5 shadow-sm">
-      <div className="mb-1.5 flex items-center gap-2 text-[13px] font-semibold text-foreground">
-        <FileText className="size-3.5 text-accent" />
+    <div className="max-w-[82%] rounded-sm border border-hairline bg-canvas-card p-4">
+      <div className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
+        <FileText className="size-3 text-foreground/70" />
         {title}
       </div>
-      <p className="mb-3 text-[12.5px] leading-5 text-muted-foreground">{description}</p>
+      <p className="mb-3 font-sans text-[13.5px] leading-6 text-foreground/85">{description}</p>
       <div className="flex gap-2">
         {actionLabel ? (
-          <Button size="sm" variant="default">
+          <Button size="sm" variant="outline">
             {actionLabel}
           </Button>
         ) : null}
@@ -171,24 +170,15 @@ function Suggestion({
   );
 }
 
-function StatusDivider({
-  text,
-  emphasis,
-}: {
-  text: string;
-  emphasis?: "accent" | "default";
-}) {
+function StatusDivider({ text }: { text: string }) {
   return (
     <div
       role="separator"
-      className={cn(
-        "flex items-center gap-2.5 text-[10.5px] font-medium uppercase tracking-[0.16em] text-muted-foreground",
-        emphasis === "accent" && "text-success",
-      )}
+      className="flex items-center gap-3 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground"
     >
-      <span className="h-px flex-1 bg-border" />
+      <span className="h-px flex-1 bg-hairline" />
       <span>{text}</span>
-      <span className="h-px flex-1 bg-border" />
+      <span className="h-px flex-1 bg-hairline" />
     </div>
   );
 }
