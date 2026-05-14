@@ -32,7 +32,7 @@ interface NotificationPayload {
 
 const view = (
   process.argv.find((arg) => arg.startsWith("--almanac-view="))?.split("=")[1] ?? "main"
-) as "main" | "notification";
+) as "main" | "notification" | "notes";
 
 function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   return ipcRenderer.invoke(channel, ...args) as Promise<T>;
@@ -81,6 +81,8 @@ const api = {
     invoke<void>(IPC_CHANNELS.notificationShow, payload),
   notificationStartNotes: () => invoke<void>(IPC_CHANNELS.notificationStartNotes),
   notificationDismiss: () => invoke<void>(IPC_CHANNELS.notificationDismiss),
+  notesStop: () => invoke<void>(IPC_CHANNELS.notesStop),
+  notesOpenChat: () => invoke<void>(IPC_CHANNELS.notesOpenChat),
 
   onAssistantStream: (listener: (payload: StreamEventPayload) => void) => {
     const handler = (_event: IpcRendererEvent, payload: StreamEventPayload) => {

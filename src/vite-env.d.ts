@@ -21,7 +21,7 @@ export interface NotificationPayload {
 declare global {
   interface Window {
     almanac: {
-      view: "main" | "notification";
+      view: "main" | "notification" | "notes";
       toggleWindow: () => Promise<void>;
       setWindowMode: (mode: WindowMode) => Promise<void>;
       setAlwaysOnTop: (enabled: boolean) => Promise<void>;
@@ -43,6 +43,8 @@ declare global {
       showNotification: (payload: NotificationPayload) => Promise<void>;
       notificationStartNotes: () => Promise<void>;
       notificationDismiss: () => Promise<void>;
+      notesStop: () => Promise<void>;
+      notesOpenChat: () => Promise<void>;
       onAssistantStream: (listener: (payload: StreamEventPayload) => void) => () => void;
       onAppEvent: (listener: (payload: AppEvent) => void) => () => void;
       onNotificationData: (listener: (payload: NotificationPayload) => void) => () => void;

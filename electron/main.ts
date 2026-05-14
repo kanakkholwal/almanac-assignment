@@ -50,12 +50,14 @@ if (process.platform === "win32") {
 
 let mainWindow: BrowserWindowType | null = null;
 let notificationWindow: BrowserWindowType | null = null;
+let notesWindow: BrowserWindowType | null = null;
 let tray: Tray | null = null;
 let windowMode: WindowMode = "compact";
 let alwaysOnTop = true;
 let isQuitting = false;
 
 const NOTIFICATION_SIZE = { width: 540, height: 200 } as const;
+const NOTES_SIZE = { width: 120, height: 260 } as const;
 
 interface NotificationPayload {
   title: string;
@@ -321,6 +323,74 @@ function closeNotificationWindow() {
   notificationWindow = null;
 }
 
+function resolveNotesUrl(): string {
+  const base = process.env.VITE_DEV_SERVER_URL
+    ? process.env.VITE_DEV_SERVER_URL
+    : `file://${path.join(__dirname, "../dist/index.html")}`;
+  const separator = base.includes("#") ? "&" : "#";
+  return `${base}${separator}notes`;
+}
+
+function createNotesWindow() {
+  if (notesWindow && !notesWindow.isDestroyed()) {
+    notesWindow.show();
+    notesWindow.focus();
+    return;
+  }
+
+  const workArea = screen.getPrimaryDisplay().workArea;
+  const x = workArea.x + Math.round((workArea.width - NOTES_SIZE.width) / 2);
+  const y = workArea.y + 16;
+  const isWin = process.platform === "win32";
+
+  notesWindow = new BrowserWindow({
+    width: NOTES_SIZE.width,
+    height: NOTES_SIZE.height,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    hasShadow: false,
+    roundedCorners: false,
+    skipTaskbar: true,
+    focusable: true,
+    alwaysOnTop: true,
+    ...(isWin ? { backgroundMaterial: "none" as const } : {}),
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      additionalArguments: ["--almanac-view=notes"],
+    },
+  });
+
+  if (isWin && typeof notesWindow.setBackgroundColor === "function") {
+    notesWindow.setBackgroundColor("#00000000");
+  }
+
+  notesWindow.setAlwaysOnTop(true, "screen-saver");
+  void notesWindow.loadURL(resolveNotesUrl());
+
+  notesWindow.once("ready-to-show", () => notesWindow?.show());
+  notesWindow.on("closed", () => {
+    notesWindow = null;
+  });
+}
+
+function closeNotesWindow() {
+  if (notesWindow && !notesWindow.isDestroyed()) {
+    notesWindow.close();
+  }
+  notesWindow = null;
+}
+
 function setMode(mode: WindowMode) {
   windowMode = mode;
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -423,15 +493,23 @@ function registerIpc() {
 
   ipcMain.handle(IPC_CHANNELS.notificationStartNotes, async () => {
     closeNotificationWindow();
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send(IPC_CHANNELS.notificationStartNotes);
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    createNotesWindow();
   });
 
   ipcMain.handle(IPC_CHANNELS.notificationDismiss, async () => {
     closeNotificationWindow();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.notesStop, async () => {
+    closeNotesWindow();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.notesOpenChat, async () => {
+    closeNotesWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
 }
 

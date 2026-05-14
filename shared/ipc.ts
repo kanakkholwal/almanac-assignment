@@ -21,6 +21,8 @@ export const IPC_CHANNELS = {
   notificationStartNotes: "notification:start-notes",
   notificationDismiss: "notification:dismiss",
   notificationData: "notification:data",
+  notesStop: "notes:stop",
+  notesOpenChat: "notes:open-chat",
 } as const;
 
 export const windowModeSchema = z.enum(["compact", "notes", "expanded"]);

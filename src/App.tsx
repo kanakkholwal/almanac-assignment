@@ -325,14 +325,8 @@ export default function App() {
 
   const startNotes = useCallback(() => {
     setCaptureState("listening");
-    setWindowMode("notes");
     appendTimeline(startNotesTimeline());
   }, [appendTimeline]);
-
-  const stopNotes = useCallback(() => {
-    setCaptureState("idle");
-    setWindowMode("compact");
-  }, []);
 
   useEffect(() => {
     const off = window.almanac?.onNotificationStartNotes?.(() => startNotes());
@@ -435,7 +429,7 @@ export default function App() {
 
   const CARD_SIZES: Record<WindowMode, { width: number; height: number }> = {
     compact: { width: 220, height: 176 },
-    notes: { width: 96, height: 232 },
+    notes: { width: 220, height: 176 },
     expanded: { width: 1120, height: 560 },
   };
   const cardSize = CARD_SIZES[windowMode];
@@ -449,24 +443,7 @@ export default function App() {
         style={{ width: cardSize.width, height: cardSize.height }}
       >
       <AnimatePresence mode="popLayout" initial={false}>
-        {windowMode === "notes" ? (
-          <motion.div
-            key="notes"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.14 }}
-            className="h-full w-full"
-          >
-            <Suspense fallback={<LazyFallback />}>
-              <NotesPill
-                recording={captureState === "listening"}
-                onStop={stopNotes}
-                onOpenChat={() => setWindowMode("expanded")}
-              />
-            </Suspense>
-          </motion.div>
-        ) : windowMode === "compact" ? (
+        {windowMode === "compact" ? (
           <motion.div
             key="compact"
             initial={{ opacity: 0 }}
