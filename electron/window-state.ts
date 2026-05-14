@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-
-import { app } from "electron";
+import { createRequire } from "node:module";
 
 import type { Rectangle } from "electron";
 
@@ -13,6 +12,9 @@ export interface PersistedWindowState {
   mode: WindowMode;
   alwaysOnTop: boolean;
 }
+
+const require = createRequire(import.meta.url);
+const { app } = require("electron/main") as typeof import("electron");
 
 const DEFAULT_WINDOW_STATE: PersistedWindowState = {
   bounds: {

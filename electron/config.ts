@@ -1,16 +1,19 @@
 import "dotenv/config";
 
-import { app } from "electron";
+import { createRequire } from "node:module";
 import { z } from "zod";
 
 import type { AppRuntimeInfo, LiteLLMConfig } from "../shared/ipc.ts";
 
 import { logger } from "./logger";
 
+const require = createRequire(import.meta.url);
+const { app } = require("electron/main") as typeof import("electron");
+
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   VITE_LITELLM_BASE_URL: z.string().url().default("https://litellm.memfold.ai"),
-  LITELLM_API_KEY: z.string().min(1, "LITELLM_API_KEY is required"),
+  LITELLM_API_KEY: z.string().optional().default(""),
   VITE_DEFAULT_CHAT_MODEL: z.string().min(1).default("gpt-4o-mini"),
   VITE_DEFAULT_TRANSCRIBE_MODEL: z.string().min(1).default("gpt-4o-mini-transcribe"),
   VITE_DEFAULT_TTS_MODEL: z.string().min(1).default("gpt-4o-mini-tts"),
@@ -67,7 +70,11 @@ export function getRuntimeInfo(): AppRuntimeInfo {
 }
 
 export function getLiteLLMKey() {
-  return getEnv().LITELLM_API_KEY;
+  return getEnv().LITELLM_API_KEY.trim();
+}
+
+export function hasLiteLLMKey() {
+  return getLiteLLMKey().length > 0;
 }
 
 export function isAutoUpdateEnabled() {

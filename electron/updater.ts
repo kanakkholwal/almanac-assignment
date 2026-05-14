@@ -1,13 +1,23 @@
-import { autoUpdater } from "electron-updater";
+import { createRequire } from "node:module";
 
 import { isAutoUpdateEnabled } from "./config";
 import { logger, serializeError } from "./logger";
+
+const require = createRequire(import.meta.url);
+const { app } = require("electron/main") as typeof import("electron");
 
 export function setupAutoUpdates(onStatus: (status: string, detail?: string) => void) {
   if (!isAutoUpdateEnabled()) {
     logger.info("Auto update disabled");
     return;
   }
+
+  if (!app.isPackaged) {
+    logger.info("Auto update skipped in development");
+    return;
+  }
+
+  const { autoUpdater } = require("electron-updater") as typeof import("electron-updater");
 
   autoUpdater.autoDownload = false;
 

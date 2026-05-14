@@ -10,8 +10,14 @@ import { modelOptionSchema, speechPayloadSchema } from "../shared/ipc.ts";
 import { sanitizeMultilineText } from "../shared/sanitize.ts";
 import { extractContentDelta } from "../shared/sse.ts";
 
-import { getLiteLLMConfig, getLiteLLMKey } from "./config";
+import { getLiteLLMConfig, getLiteLLMKey, hasLiteLLMKey } from "./config";
 import { logger } from "./logger";
+
+function assertLiteLLMConfigured() {
+  if (!hasLiteLLMKey()) {
+    throw new Error("LITELLM_API_KEY is not configured. The desktop shell can run, but assistant features are disabled.");
+  }
+}
 
 function endpoint(path: string) {
   return `${getLiteLLMConfig().baseUrl.replace(/\/$/, "")}${path}`;
@@ -25,6 +31,10 @@ function headers(extra?: Record<string, string>): Record<string, string> {
 }
 
 export async function fetchModels(): Promise<ModelOption[]> {
+  if (!hasLiteLLMKey()) {
+    return [];
+  }
+
   const response = await fetch(endpoint("/v1/models"), {
     headers: headers(),
   });
@@ -46,6 +56,8 @@ export async function fetchModels(): Promise<ModelOption[]> {
 export async function* streamChatCompletion(
   request: ChatCompletionRequest,
 ): AsyncGenerator<StreamEventPayload> {
+  assertLiteLLMConfigured();
+
   const response = await fetch(endpoint("/v1/chat/completions"), {
     method: "POST",
     headers: headers({
@@ -113,6 +125,8 @@ export async function* streamChatCompletion(
 }
 
 export async function transcribeAudio(buffer: Uint8Array, mimeType: string, model: string) {
+  assertLiteLLMConfigured();
+
   const formData = new FormData();
   const extension = mimeType.includes("webm") ? "webm" : "wav";
   formData.append(
@@ -140,6 +154,8 @@ export async function transcribeAudio(buffer: Uint8Array, mimeType: string, mode
 }
 
 export async function synthesizeSpeech(input: string, model: string): Promise<SpeechPayload> {
+  assertLiteLLMConfigured();
+
   const response = await fetch(endpoint("/v1/audio/speech"), {
     method: "POST",
     headers: headers({

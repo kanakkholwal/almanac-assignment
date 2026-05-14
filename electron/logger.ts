@@ -1,9 +1,8 @@
 import path from "node:path";
 import { createRequire } from "node:module";
 
-import { app } from "electron";
-
 const require = createRequire(import.meta.url);
+const { app } = require("electron/main") as typeof import("electron");
 const log = require("electron-log/main.js") as typeof import("electron-log/main.js");
 
 log.initialize();

@@ -1,10 +1,13 @@
 import path from "node:path";
 
-import { BrowserWindow, nativeImage, screen } from "electron";
-
+import { createRequire } from "node:module";
+import type { BrowserWindow as BrowserWindowType } from "electron";
 import type { WindowMode, WindowState } from "../shared/ipc.ts";
 
 import type { PersistedWindowState } from "./window-state";
+
+const require = createRequire(import.meta.url);
+const { BrowserWindow, nativeImage, screen } = require("electron/main") as typeof import("electron");
 
 const WINDOW_SIZES: Record<WindowMode, { width: number; height: number }> = {
   compact: { width: 220, height: 152 },
@@ -92,7 +95,7 @@ export function createMainWindow(initialState: PersistedWindowState) {
   return win;
 }
 
-export function applyWindowMode(win: BrowserWindow, mode: WindowMode) {
+export function applyWindowMode(win: BrowserWindowType, mode: WindowMode) {
   if (win.isMaximized()) {
     return;
   }
@@ -108,7 +111,11 @@ export function applyWindowMode(win: BrowserWindow, mode: WindowMode) {
   win.setMinimumSize(WINDOW_SIZES.compact.width, WINDOW_SIZES.compact.height);
 }
 
-export function getWindowState(win: BrowserWindow, mode: WindowMode, alwaysOnTop: boolean): WindowState {
+export function getWindowState(
+  win: BrowserWindowType,
+  mode: WindowMode,
+  alwaysOnTop: boolean,
+): WindowState {
   return {
     mode,
     alwaysOnTop,

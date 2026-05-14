@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { createRequire } from "node:module";
 
 import type {
   AppEvent,
@@ -23,6 +23,9 @@ import {
   windowModeSchema,
   windowStateSchema,
 } from "../shared/ipc.ts";
+
+const require = createRequire(import.meta.url);
+const { contextBridge, ipcRenderer } = require("electron/renderer") as typeof import("electron");
 
 function invoke<T>(channel: string, ...args: unknown[]) {
   return ipcRenderer.invoke(channel, ...args) as Promise<T>;

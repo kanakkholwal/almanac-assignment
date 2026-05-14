@@ -1,17 +1,7 @@
 import "dotenv/config";
 
-import {
-  app,
-  crashReporter,
-  dialog,
-  globalShortcut,
-  ipcMain,
-  Menu,
-  nativeTheme,
-  Tray,
-} from "electron";
-
-import type { BrowserWindow } from "electron";
+import { createRequire } from "node:module";
+import type { BrowserWindow, Tray as TrayType } from "electron";
 
 import {
   appEventSchema,
@@ -24,15 +14,19 @@ import {
   type WindowMode,
 } from "../shared/ipc.ts";
 
-import { getEnv, getRuntimeInfo } from "./config";
+import { getRuntimeInfo } from "./config";
 import { fetchModels, streamChatCompletion, synthesizeSpeech, transcribeAudio } from "./litellm";
 import { logger, serializeError } from "./logger";
 import { setupAutoUpdates } from "./updater";
 import { createMainWindow, getAppIcon, getWindowState, applyWindowMode } from "./window";
 import { readWindowState, writeWindowState } from "./window-state";
 
+const require = createRequire(import.meta.url);
+const { app, dialog, globalShortcut, ipcMain, Menu, nativeTheme, Tray } =
+  require("electron/main") as typeof import("electron");
+
 let mainWindow: BrowserWindow | null = null;
-let tray: Tray | null = null;
+let tray: TrayType | null = null;
 let windowMode: WindowMode = "expanded";
 let alwaysOnTop = true;
 let isQuitting = false;
@@ -334,15 +328,6 @@ function registerIpc() {
 }
 
 async function bootstrap() {
-  getEnv();
-
-  crashReporter.start({
-    productName: "Almanac",
-    companyName: "Memfold",
-    uploadToServer: false,
-    compress: true,
-  });
-
   await app.whenReady();
 
   nativeTheme.themeSource = "dark";
