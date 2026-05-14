@@ -4,16 +4,16 @@
   "private": true,
   "type": "module",
   "description": "Floating desktop AI assistant for meetings and chat.",
-  "main": "dist-electron/main.js",
+  "main": "electron/main.cjs",
   "scripts": {
-    "start": "electron .",
-    "start:electron": "electron .",
+    "start": "node scripts/run-electron.cjs .",
+    "start:electron": "node scripts/run-electron.cjs .",
     "dev": "concurrently -k \"pnpm dev:react\" \"pnpm dev:electron\"",
     "dev:react": "vite",
-    "dev:electron": "wait-on http://127.0.0.1:5173 && pnpm build:electron && cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "dev:electron": "wait-on http://127.0.0.1:5173 && cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://127.0.0.1:5173 node scripts/run-electron.cjs .",
     "build": "pnpm build:react && pnpm build:electron",
     "build:react": "vite build",
-    "build:electron": "tsup electron/main.ts electron/preload.ts --format esm --out-dir dist-electron --target node20 --external electron --shims",
+    "build:electron": "node -e \"console.log('Electron uses checked-in CommonJS entrypoints: electron/main.cjs and electron/preload.cjs')\"",
     "build:prod": "cross-env NODE_ENV=production pnpm build",
     "dist": "pnpm build && electron-builder",
     "dist:win": "pnpm build && electron-builder --win nsis",
@@ -76,11 +76,11 @@
     },
     "files": [
       "dist/**/*",
-      "dist-electron/**/*",
+      "electron/**/*.cjs",
       "package.json"
     ],
     "extraMetadata": {
-      "main": "dist-electron/main.js"
+      "main": "electron/main.cjs"
     },
     "publish": [
       {

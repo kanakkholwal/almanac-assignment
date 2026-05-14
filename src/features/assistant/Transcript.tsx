@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { CheckCheck, FileText, Sparkles } from "lucide-react";
+import { CheckCheck, FileText } from "lucide-react";
 
 import type { TimelineItem } from "@shared/ipc";
 
@@ -20,7 +20,7 @@ function renderContent(content: string) {
       return (
         <a
           key={`link-${index}`}
-          className="break-words font-medium text-primary underline-offset-4 transition-colors hover:underline"
+          className="wrap-break-word font-medium text-primary underline-offset-4 transition-colors hover:underline"
           href={part}
           rel="noreferrer noopener"
           target="_blank"
@@ -111,23 +111,15 @@ function UserMessage({
 
 function AssistantMessage({ content }: { content: string }) {
   return (
-    <div className="flex items-start gap-2.5">
-      <span
-        aria-hidden
-        className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary ring-1 ring-inset ring-primary/25"
-      >
-        <Sparkles className="size-3" />
-      </span>
-      <div className="min-w-0 flex-1 whitespace-pre-wrap break-words text-[13.5px] leading-7 text-foreground">
-        {content ? (
-          renderContent(content)
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
-            <span className="size-1.5 animate-pulse rounded-full bg-primary" />
-            thinking…
-          </span>
-        )}
-      </div>
+    <div className="whitespace-pre-wrap wrap-break-word text-[14px] leading-7 text-foreground">
+      {content ? (
+        renderContent(content)
+      ) : (
+        <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+          <span className="size-1.5 animate-pulse rounded-full bg-primary" />
+          thinking…
+        </span>
+      )}
     </div>
   );
 }

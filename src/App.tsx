@@ -20,8 +20,6 @@ import {
   MonitorUp,
   Pin,
   SendHorizonal,
-  Settings,
-  Sparkles,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -39,11 +37,9 @@ import { timelineItemSchema } from "@shared/ipc";
 import { SEEDED_TIMELINE } from "@shared/mock-data";
 import { sanitizeMultilineText } from "@shared/sanitize";
 
-import { WindowControls } from "@/components/WindowControls";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { usePushToTalk } from "@/hooks/usePushToTalk";
 import {
   getInitialNotification,
@@ -450,7 +446,7 @@ export default function App() {
 
   if (windowMode === "compact") {
     return (
-      <div className="h-screen w-screen bg-transparent p-1">
+      <div className="h-screen w-screen bg-transparent">
         <Suspense fallback={<LazyFallback />}>
           <CompactLauncher
             onCapture={() => {
@@ -466,10 +462,10 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-transparent p-2 sm:p-3">
+    <div className="h-screen w-screen bg-transparent">
       <motion.div
         layoutId="alma-shell"
-        className="glass-panel surface-ambient relative flex h-full w-full flex-col overflow-hidden rounded-2xl sm:rounded-3xl"
+        className="glass-panel relative flex h-full w-full flex-col overflow-hidden rounded-2xl"
       >
         <Suspense fallback={null}>
           <MeetingPrompt
@@ -481,33 +477,25 @@ export default function App() {
 
         <header
           data-drag-region="true"
-          className="flex items-center justify-between gap-2 border-b border-border/80 px-3 py-2"
+          className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border/60 px-4 py-2.5"
         >
-          <div className="flex items-center gap-2" data-no-drag="true">
-            <WindowControls runtime={runtimeInfo} windowState={windowState} />
-            <Separator orientation="vertical" className="mx-1 h-4" />
-            <div className="flex items-center gap-1.5">
-              <span
-                aria-hidden
-                className="flex size-5 items-center justify-center rounded-md bg-primary/15 text-primary ring-1 ring-inset ring-primary/25"
-              >
-                <Sparkles className="size-3" />
-              </span>
-              <span className="text-[13px] font-semibold tracking-tight text-foreground">
-                Alma
-              </span>
-              <span className="text-[11px] text-muted-foreground" aria-hidden>
-                · {currentTime}
-              </span>
-            </div>
+          <div className="flex items-center" data-no-drag="true">
+            <ShortcutAction
+              label="Ask Alma"
+              keys={[modKey, "↵"]}
+              onClick={() => {/* focus is on input by default */}}
+            />
           </div>
 
-          <div className="hidden items-center gap-1 md:flex" data-no-drag="true">
-            <HeaderShortcut keys={[modKey, "↵"]} label="Ask" />
-            <HeaderShortcut keys={[modKey, "S"]} label="Capture" />
+          <div className="flex items-center justify-center" data-no-drag="true">
+            <ShortcutAction
+              label="Capture"
+              keys={[modKey, "S"]}
+              onClick={() => setNotification(getInitialNotification())}
+            />
           </div>
 
-          <div className="flex items-center gap-0.5" data-no-drag="true">
+          <div className="flex items-center justify-end gap-0.5" data-no-drag="true">
             <Button
               aria-label="Toggle voice output"
               aria-pressed={speechEnabled}
@@ -536,21 +524,11 @@ export default function App() {
                 void window.almanac?.setAlwaysOnTop(next);
               }}
               size="icon-sm"
-              variant={alwaysOnTop ? "default" : "ghost"}
+              variant="ghost"
               title="Always on top"
             >
               <Pin />
             </Button>
-            <Button
-              aria-label="Settings"
-              size="icon-sm"
-              variant="ghost"
-              title="Settings"
-              onClick={() => {/* placeholder */}}
-            >
-              <Settings />
-            </Button>
-            <Separator orientation="vertical" className="mx-1 h-4" />
             <Button
               aria-label="Collapse to launcher"
               onClick={() => setWindowMode("compact")}
@@ -565,7 +543,8 @@ export default function App() {
 
         <div className="relative flex flex-1 flex-col overflow-hidden">
           <div className="relative z-10 flex h-full flex-col px-3 pb-3 sm:px-5 sm:pb-4">
-            <div className="flex items-center justify-center py-2.5">
+            <div className="flex items-center justify-center gap-2 py-3 text-[12.5px] text-foreground/70">
+              <span>Today, {currentTime}</span>
               {captureState === "listening" ? (
                 <StatusPill tone="success">
                   <span className="size-1.5 animate-pulse rounded-full bg-success" />
@@ -581,9 +560,6 @@ export default function App() {
                   <LoaderCircle className="size-3 animate-spin" />
                   Thinking…
                 </StatusPill>
-              ) : null}
-              {windowState?.isMaximized ? (
-                <StatusPill tone="muted">Maximized</StatusPill>
               ) : null}
             </div>
 
@@ -629,25 +605,16 @@ export default function App() {
             />
 
             {runtimeInfo ? (
-              <div className="mt-2 flex items-center justify-end gap-1.5 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
+              <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10.5px] text-muted-foreground/70">
                 <span>{platformLabel}</span>
                 <span aria-hidden>·</span>
                 <span>v{runtimeInfo.appVersion}</span>
-                <span aria-hidden>·</span>
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1",
-                    runtimeInfo.config.apiKeyPresent ? "text-success" : "text-destructive",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "size-1 rounded-full",
-                      runtimeInfo.config.apiKeyPresent ? "bg-success" : "bg-destructive",
-                    )}
-                  />
-                  {runtimeInfo.config.apiKeyPresent ? "API ready" : "No API key"}
-                </span>
+                {runtimeInfo.config.apiKeyPresent ? null : (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span className="text-muted-foreground/90">no API key</span>
+                  </>
+                )}
               </div>
             ) : null}
           </div>
@@ -674,8 +641,8 @@ const Composer = memo(
       return (
         <div
           className={cn(
-            "group/composer relative flex items-end gap-2 rounded-2xl border border-border bg-card/70 p-1.5 pl-3.5",
-            "shadow-sm transition-colors focus-within:border-primary/40 focus-within:bg-card/85",
+            "relative flex items-center gap-1.5 rounded-full border border-border bg-white/5 py-1.5 pl-5 pr-1.5",
+            "transition-colors focus-within:border-white/15 focus-within:bg-white/8",
           )}
         >
           <textarea
@@ -685,7 +652,7 @@ const Composer = memo(
             maxLength={2000}
             rows={1}
             value={value}
-            placeholder="Ask Alma anything…"
+            placeholder="Type your message..."
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -694,37 +661,39 @@ const Composer = memo(
               }
             }}
             className={cn(
-              "max-h-32 min-h-[34px] flex-1 resize-none border-0 bg-transparent py-2 pr-1",
-              "text-[13.5px] leading-6 text-foreground outline-none",
-              "placeholder:text-muted-foreground/70",
+              "max-h-28 min-h-7 flex-1 resize-none border-0 bg-transparent py-1",
+              "text-[14px] leading-6 text-foreground outline-none",
+              "placeholder:text-foreground/55",
               "disabled:cursor-not-allowed disabled:opacity-60",
             )}
           />
-          <div className="flex items-center gap-1 pb-0.5">
-            <Button
-              aria-label={recording ? "Stop recording" : "Hold to talk"}
-              aria-pressed={recording}
-              onClick={onToggleRecord}
-              size="icon"
-              variant={recording ? "destructive" : "ghost"}
-              className={cn(recording && "animate-[pulse-ring_1.8s_ease-out_infinite]")}
-            >
-              {busyState === "transcribing" || busyState === "streaming" ? (
-                <LoaderCircle className="animate-spin" />
-              ) : (
-                <Mic />
-              )}
-            </Button>
-            <Button
-              aria-label="Send message"
-              disabled={!value.trim() || busy}
-              onClick={onSubmit}
-              size="icon"
-              variant="default"
-            >
-              <SendHorizonal />
-            </Button>
-          </div>
+          <Button
+            aria-label={recording ? "Stop recording" : "Hold to talk"}
+            aria-pressed={recording}
+            onClick={onToggleRecord}
+            size="icon"
+            variant="ghost"
+            className={cn(
+              "rounded-full",
+              recording && "animate-pulse-ring text-destructive",
+            )}
+          >
+            {busyState === "transcribing" || busyState === "streaming" ? (
+              <LoaderCircle className="animate-spin" />
+            ) : (
+              <Mic />
+            )}
+          </Button>
+          <Button
+            aria-label="Send message"
+            disabled={!value.trim() || busy}
+            onClick={onSubmit}
+            size="icon"
+            variant="accent"
+            className="rounded-full"
+          >
+            <SendHorizonal />
+          </Button>
         </div>
       );
     },
@@ -732,16 +701,33 @@ const Composer = memo(
   ),
 );
 
-function HeaderShortcut({ keys, label }: { keys: string[]; label: string }) {
+function ShortcutAction({
+  label,
+  keys,
+  onClick,
+}: {
+  label: string;
+  keys: string[];
+  onClick: () => void;
+}) {
   return (
-    <div className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground">
+    <button
+      type="button"
+      data-no-drag="true"
+      onClick={onClick}
+      className={cn(
+        "group inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-foreground",
+        "transition-colors hover:bg-white/6",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      )}
+    >
       <span>{label}</span>
       <span className="flex items-center gap-0.5">
         {keys.map((k) => (
           <Kbd key={k}>{k}</Kbd>
         ))}
       </span>
-    </div>
+    </button>
   );
 }
 
