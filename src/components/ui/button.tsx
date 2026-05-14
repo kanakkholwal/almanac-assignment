@@ -4,24 +4,45 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center rounded-full transition-all duration-200 disabled:pointer-events-none disabled:opacity-50",
+  [
+    "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md text-sm font-medium",
+    "transition-[background,color,box-shadow,transform] duration-150 ease-out",
+    "outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+    "disabled:pointer-events-none disabled:opacity-50",
+    "active:scale-[0.97]",
+    "[&_svg]:shrink-0 [&_svg]:size-4",
+  ].join(" "),
   {
     variants: {
       variant: {
-        glass: "glass-chip text-surface-ink hover:bg-white/20",
+        default:
+          "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+        secondary:
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        outline:
+          "border border-border bg-transparent text-foreground hover:bg-muted",
+        ghost:
+          "text-foreground/80 hover:bg-white/[0.06] hover:text-foreground",
+        glass:
+          "glass-chip text-foreground hover:bg-white/[0.1]",
         accent:
-          "bg-surface-accent text-white shadow-[0_10px_24px_rgba(255,138,35,0.35)] hover:brightness-110",
-        ghost: "text-surface-ink/80 hover:bg-white/10",
+          "bg-accent text-accent-foreground shadow-sm hover:bg-accent/90",
+        destructive:
+          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+        link:
+          "text-primary underline-offset-4 hover:underline",
       },
       size: {
-        icon: "h-8 w-8",
-        sm: "h-8 px-3 text-xs",
-        md: "h-10 px-4 text-sm",
+        default: "h-9 px-4",
+        sm: "h-8 rounded-md px-3 text-xs",
+        lg: "h-10 rounded-md px-6",
+        icon: "size-8",
+        "icon-sm": "size-7 [&_svg]:size-[14px]",
       },
     },
     defaultVariants: {
-      variant: "glass",
-      size: "md",
+      variant: "default",
+      size: "default",
     },
   },
 );
@@ -33,8 +54,8 @@ export interface ButtonProps
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, ...props }, ref) => (
     <button
-      className={cn(buttonVariants({ variant, size }), className)}
       ref={ref}
+      className={cn(buttonVariants({ variant, size }), className)}
       {...props}
     />
   ),

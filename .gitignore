@@ -8,3 +8,5 @@ coverage
 .env
 .env.local
 .env.prod.local
+
+*.tsbuildinfo

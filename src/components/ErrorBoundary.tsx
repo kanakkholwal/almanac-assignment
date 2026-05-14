@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 import { Component } from "react";
+import { AlertTriangle, RotateCcw } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -10,9 +13,7 @@ interface ErrorBoundaryState {
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = {
-    error: null,
-  };
+  state: ErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { error };
@@ -23,22 +24,40 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   render() {
-    if (this.state.error) {
-      return (
-        <div className="flex min-h-screen items-center justify-center bg-[#160d1d] p-6 text-surface-ink">
-          <div className="glass-panel max-w-lg rounded-[1.75rem] p-6">
-            <h1 className="text-xl font-semibold">Almanac hit a renderer error</h1>
-            <p className="mt-3 text-sm leading-6 text-surface-muted">
-              The UI crashed gracefully. You can reload the app window or restart the desktop app.
-            </p>
-            <pre className="mt-4 overflow-auto rounded-2xl bg-black/20 p-4 text-xs text-rose-100">
-              {this.state.error.message}
-            </pre>
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <div className="surface-ambient flex min-h-screen items-center justify-center p-6">
+        <div className="glass-panel w-full max-w-md rounded-2xl p-6">
+          <div className="flex items-center gap-3">
+            <div
+              aria-hidden
+              className="flex size-9 items-center justify-center rounded-lg bg-destructive/15 text-destructive"
+            >
+              <AlertTriangle className="size-4" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-base font-semibold tracking-tight">
+                Something went wrong
+              </h1>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                The renderer process crashed. You can reload the window to recover.
+              </p>
+            </div>
+          </div>
+
+          <pre className="mt-4 max-h-40 overflow-auto rounded-lg border border-border bg-black/30 p-3 font-mono text-[11px] leading-relaxed text-destructive-foreground/90">
+            {this.state.error.message}
+          </pre>
+
+          <div className="mt-4 flex justify-end">
+            <Button onClick={() => window.location.reload()} size="sm">
+              <RotateCcw />
+              Reload window
+            </Button>
           </div>
         </div>
-      );
-    }
-
-    return this.props.children;
+      </div>
+    );
   }
 }

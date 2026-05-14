@@ -11,14 +11,19 @@ import {
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertCircle,
+  CheckCircle2,
   Headphones,
   LoaderCircle,
-  Maximize2,
   Mic,
-  Minus,
+  Minimize2,
   MonitorUp,
+  Pin,
   SendHorizonal,
   Settings,
+  Sparkles,
+  TriangleAlert,
+  X,
 } from "lucide-react";
 
 import type {
@@ -36,7 +41,9 @@ import { sanitizeMultilineText } from "@shared/sanitize";
 
 import { WindowControls } from "@/components/WindowControls";
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import { usePushToTalk } from "@/hooks/usePushToTalk";
 import {
   getInitialNotification,
@@ -44,22 +51,18 @@ import {
   startNotesTimeline,
   type MeetingNotification,
 } from "@/lib/mockMeetingAdapter";
-import { createId, formatClock, normalizePrompt } from "@/lib/utils";
+import { cn, createId, formatClock, normalizePrompt } from "@/lib/utils";
 
 const CompactLauncher = lazy(async () =>
-  import("@/features/assistant/CompactLauncher").then((module) => ({
-    default: module.CompactLauncher,
+  import("@/features/assistant/CompactLauncher").then((m) => ({
+    default: m.CompactLauncher,
   })),
 );
 const Transcript = lazy(async () =>
-  import("@/features/assistant/Transcript").then((module) => ({
-    default: module.Transcript,
-  })),
+  import("@/features/assistant/Transcript").then((m) => ({ default: m.Transcript })),
 );
 const MeetingPrompt = lazy(async () =>
-  import("@/features/meeting/MeetingPrompt").then((module) => ({
-    default: module.MeetingPrompt,
-  })),
+  import("@/features/meeting/MeetingPrompt").then((m) => ({ default: m.MeetingPrompt })),
 );
 
 const STORAGE_KEY = "almanac.timeline.v1";
@@ -93,13 +96,9 @@ function buildTimelineMessage(
 }
 
 function loadSeedTimeline(): TimelineItem[] {
-  if (typeof window === "undefined") {
-    return SEEDED_TIMELINE;
-  }
+  if (typeof window === "undefined") return SEEDED_TIMELINE;
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (!stored) {
-    return SEEDED_TIMELINE;
-  }
+  if (!stored) return SEEDED_TIMELINE;
   try {
     const parsed = JSON.parse(stored) as unknown[];
     const items = parsed
@@ -114,20 +113,73 @@ function loadSeedTimeline(): TimelineItem[] {
 
 const LazyFallback = memo(function LazyFallback() {
   return (
-    <div className="flex items-center justify-center py-6 text-sm text-surface-muted">
-      <LoaderCircle className="mr-2 animate-spin" size={14} />
+    <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
+      <LoaderCircle className="size-3.5 animate-spin" />
       Loading…
     </div>
   );
 });
 
-const ShortcutChip = memo(function ShortcutChip({ label }: { label: string }) {
+type BannerTone = "warning" | "info" | "error";
+
+const BANNER_TOKENS: Record<
+  BannerTone,
+  { wrapper: string; icon: typeof AlertCircle; iconClass: string }
+> = {
+  warning: {
+    wrapper: "border-accent/25 bg-accent/10 text-accent-foreground",
+    icon: TriangleAlert,
+    iconClass: "text-accent",
+  },
+  info: {
+    wrapper: "border-border bg-card/70 text-foreground/85",
+    icon: CheckCircle2,
+    iconClass: "text-primary",
+  },
+  error: {
+    wrapper: "border-destructive/30 bg-destructive/10 text-destructive-foreground",
+    icon: AlertCircle,
+    iconClass: "text-destructive",
+  },
+};
+
+function Banner({
+  tone,
+  children,
+  onDismiss,
+}: {
+  tone: BannerTone;
+  children: React.ReactNode;
+  onDismiss?: () => void;
+}) {
+  const tokens = BANNER_TOKENS[tone];
+  const Icon = tokens.icon;
   return (
-    <span className="inline-flex h-[22px] min-w-[22px] items-center justify-center rounded-md border border-white/15 bg-white/8 px-1.5 text-[11px] font-medium text-surface-ink/85 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]">
-      {label}
-    </span>
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 6 }}
+      transition={{ duration: 0.18 }}
+      role={tone === "error" ? "alert" : "status"}
+      className={cn(
+        "mb-2 flex items-center gap-2.5 rounded-lg border px-3 py-2 text-xs",
+        tokens.wrapper,
+      )}
+    >
+      <Icon className={cn("size-3.5 shrink-0", tokens.iconClass)} />
+      <span className="min-w-0 flex-1 truncate">{children}</span>
+      {onDismiss ? (
+        <button
+          aria-label="Dismiss"
+          onClick={onDismiss}
+          className="-mr-1 flex size-5 items-center justify-center rounded text-current/70 transition hover:bg-white/10 hover:text-current"
+        >
+          <X className="size-3" />
+        </button>
+      ) : null}
+    </motion.div>
   );
-});
+}
 
 export default function App() {
   const [windowMode, setWindowMode] = useState<WindowMode>("expanded");
@@ -202,7 +254,9 @@ export default function App() {
       })
       .catch((fetchError) => {
         if (active) {
-          setError(fetchError instanceof Error ? fetchError.message : "Startup initialization failed");
+          setError(
+            fetchError instanceof Error ? fetchError.message : "Startup initialization failed",
+          );
         }
       });
 
@@ -231,12 +285,10 @@ export default function App() {
 
       if (payload.done) {
         setCaptureState("idle");
-
         if (speechEnabledRef.current) {
           const finished = timelineRef.current.find(
             (item) => item.kind === "message" && item.message.id === payload.messageId,
           );
-
           if (finished?.kind === "message" && finished.message.content) {
             try {
               const speech = await almanac.synthesizeSpeech(
@@ -261,11 +313,7 @@ export default function App() {
         setWindowMode(event.state.mode);
         setAlwaysOnTop(event.state.alwaysOnTop);
       }
-
-      if (event.type === "runtime-warning") {
-        setRuntimeWarning(event.message);
-      }
-
+      if (event.type === "runtime-warning") setRuntimeWarning(event.message);
       if (event.type === "update-status") {
         setUpdateStatus(
           event.detail ? `Updater: ${event.status} (${event.detail})` : `Updater: ${event.status}`,
@@ -289,10 +337,7 @@ export default function App() {
     () =>
       timeline
         .filter((item): item is Extract<TimelineItem, { kind: "message" }> => item.kind === "message")
-        .map((item) => ({
-          role: item.message.role,
-          content: item.message.content,
-        })),
+        .map((item) => ({ role: item.message.role, content: item.message.content })),
     [timeline],
   );
 
@@ -366,13 +411,13 @@ export default function App() {
         defaultModels.transcribe,
       );
       setCaptureState("idle");
-      if (transcript.trim()) {
-        await sendMessage(transcript);
-      }
+      if (transcript.trim()) await sendMessage(transcript);
     } catch (transcriptionError) {
       setCaptureState("idle");
       setError(
-        transcriptionError instanceof Error ? transcriptionError.message : "Transcription failed",
+        transcriptionError instanceof Error
+          ? transcriptionError.message
+          : "Transcription failed",
       );
     }
   });
@@ -383,7 +428,6 @@ export default function App() {
       await recorder.stopRecording();
       return;
     }
-
     setCaptureState("recording");
     try {
       await recorder.startRecording();
@@ -394,12 +438,19 @@ export default function App() {
   }, [recorder]);
 
   const isMac = runtimeInfo?.platform === "darwin";
-  const modKey = isMac ? "⌘" : "⌃";
-  const platformLabel = isMac ? "macOS" : runtimeInfo?.platform === "linux" ? "Linux" : "Windows";
+  const modKey = isMac ? "⌘" : "Ctrl";
+  const platformLabel = isMac
+    ? "macOS"
+    : runtimeInfo?.platform === "linux"
+      ? "Linux"
+      : "Windows";
+
+  const isBusy = captureState === "streaming" || captureState === "transcribing";
+  const inputDisabled = isBusy;
 
   if (windowMode === "compact") {
     return (
-      <div className="h-screen w-screen bg-transparent p-0.5">
+      <div className="h-screen w-screen bg-transparent p-1">
         <Suspense fallback={<LazyFallback />}>
           <CompactLauncher
             onCapture={() => {
@@ -415,10 +466,10 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen w-screen bg-[#160d1d] p-3">
+    <div className="h-screen w-screen bg-transparent p-2 sm:p-3">
       <motion.div
         layoutId="alma-shell"
-        className="app-shell relative flex h-full w-full flex-col overflow-hidden rounded-[2rem]"
+        className="glass-panel surface-ambient relative flex h-full w-full flex-col overflow-hidden rounded-2xl sm:rounded-3xl"
       >
         <Suspense fallback={null}>
           <MeetingPrompt
@@ -429,103 +480,115 @@ export default function App() {
         </Suspense>
 
         <header
-          className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3"
           data-drag-region="true"
+          className="flex items-center justify-between gap-2 border-b border-border/80 px-3 py-2"
         >
           <div className="flex items-center gap-2" data-no-drag="true">
             <WindowControls runtime={runtimeInfo} windowState={windowState} />
-            <button
-              className="ml-1 text-[14px] font-medium text-surface-ink"
-              onClick={() => setWindowMode("compact")}
-            >
-              Ask Alma
-            </button>
-            <ShortcutChip label={modKey} />
-            <ShortcutChip label="—" />
+            <Separator orientation="vertical" className="mx-1 h-4" />
+            <div className="flex items-center gap-1.5">
+              <span
+                aria-hidden
+                className="flex size-5 items-center justify-center rounded-md bg-primary/15 text-primary ring-1 ring-inset ring-primary/25"
+              >
+                <Sparkles className="size-3" />
+              </span>
+              <span className="text-[13px] font-semibold tracking-tight text-foreground">
+                Alma
+              </span>
+              <span className="text-[11px] text-muted-foreground" aria-hidden>
+                · {currentTime}
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2" data-no-drag="true">
-            <button
-              className="text-[14px] font-medium text-surface-ink"
-              onClick={() => setNotification(getInitialNotification())}
-            >
-              Capture
-            </button>
-            <ShortcutChip label={modKey} />
-            <ShortcutChip label="S" />
+          <div className="hidden items-center gap-1 md:flex" data-no-drag="true">
+            <HeaderShortcut keys={[modKey, "↵"]} label="Ask" />
+            <HeaderShortcut keys={[modKey, "S"]} label="Capture" />
           </div>
 
-          <div className="flex items-center gap-1.5" data-no-drag="true">
+          <div className="flex items-center gap-0.5" data-no-drag="true">
             <Button
               aria-label="Toggle voice output"
               aria-pressed={speechEnabled}
-              onClick={() => setSpeechEnabled((current) => !current)}
-              size="icon"
-              variant={speechEnabled ? "accent" : "glass"}
+              onClick={() => setSpeechEnabled((v) => !v)}
+              size="icon-sm"
+              variant={speechEnabled ? "default" : "ghost"}
+              title="Voice output"
             >
-              <Headphones size={14} />
+              <Headphones />
             </Button>
             <Button
               aria-label="Capture screen"
               onClick={() => setNotification(getInitialNotification())}
-              size="icon"
-              variant="glass"
+              size="icon-sm"
+              variant="ghost"
+              title="Capture screen"
             >
-              <MonitorUp size={14} />
+              <MonitorUp />
             </Button>
             <Button
-              aria-label="Settings"
+              aria-label={alwaysOnTop ? "Disable always on top" : "Enable always on top"}
               aria-pressed={alwaysOnTop}
               onClick={() => {
                 const next = !alwaysOnTop;
                 setAlwaysOnTop(next);
                 void window.almanac?.setAlwaysOnTop(next);
               }}
-              size="icon"
-              variant="glass"
+              size="icon-sm"
+              variant={alwaysOnTop ? "default" : "ghost"}
+              title="Always on top"
             >
-              <Settings size={14} />
+              <Pin />
             </Button>
             <Button
-              aria-label="Minimize"
+              aria-label="Settings"
+              size="icon-sm"
+              variant="ghost"
+              title="Settings"
+              onClick={() => {/* placeholder */}}
+            >
+              <Settings />
+            </Button>
+            <Separator orientation="vertical" className="mx-1 h-4" />
+            <Button
+              aria-label="Collapse to launcher"
               onClick={() => setWindowMode("compact")}
-              size="icon"
-              variant="glass"
+              size="icon-sm"
+              variant="ghost"
+              title="Collapse"
             >
-              <Minus size={14} />
-            </Button>
-            <Button
-              aria-label={windowState?.isMaximized ? "Restore" : "Maximize"}
-              onClick={() => void window.almanac?.toggleMaximizeWindow()}
-              size="icon"
-              variant="glass"
-            >
-              <Maximize2 size={13} />
+              <Minimize2 />
             </Button>
           </div>
         </header>
 
-        <div className="relative flex-1 overflow-hidden bg-alma-blur">
-          <div className="pointer-events-none absolute inset-0 bg-alma-chat opacity-100" />
-
-          <div className="relative z-10 flex h-full flex-col px-5 pb-4">
-            <div className="flex items-center justify-center gap-3 py-4 text-center text-[13px] text-surface-ink/85">
-              <span>Today, {currentTime}</span>
+        <div className="relative flex flex-1 flex-col overflow-hidden">
+          <div className="relative z-10 flex h-full flex-col px-3 pb-3 sm:px-5 sm:pb-4">
+            <div className="flex items-center justify-center py-2.5">
               {captureState === "listening" ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/15 px-2 py-0.5 text-[11px] font-medium text-emerald-200">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-300" />
-                  Alma listening…
-                </span>
+                <StatusPill tone="success">
+                  <span className="size-1.5 animate-pulse rounded-full bg-success" />
+                  Listening…
+                </StatusPill>
+              ) : captureState === "transcribing" ? (
+                <StatusPill tone="info">
+                  <LoaderCircle className="size-3 animate-spin" />
+                  Transcribing…
+                </StatusPill>
+              ) : captureState === "streaming" ? (
+                <StatusPill tone="info">
+                  <LoaderCircle className="size-3 animate-spin" />
+                  Thinking…
+                </StatusPill>
               ) : null}
               {windowState?.isMaximized ? (
-                <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-surface-muted">
-                  Maximized
-                </span>
+                <StatusPill tone="muted">Maximized</StatusPill>
               ) : null}
             </div>
 
-            <ScrollArea className="scroll-shadow min-h-0 flex-1" viewportRef={viewportRef}>
-              <div className="pb-6 pr-1">
+            <ScrollArea className="scroll-mask min-h-0 flex-1" viewportRef={viewportRef}>
+              <div className="pb-6 pr-1.5">
                 <Suspense fallback={<LazyFallback />}>
                   <Transcript items={deferredTimeline} />
                 </Suspense>
@@ -534,95 +597,57 @@ export default function App() {
 
             <AnimatePresence>
               {runtimeWarning ? (
-                <motion.div
+                <Banner
                   key="warn"
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mb-2 rounded-2xl border border-amber-200/20 bg-amber-400/10 px-4 py-2 text-xs text-amber-100"
-                  exit={{ opacity: 0, y: 8 }}
-                  initial={{ opacity: 0, y: 8 }}
+                  tone="warning"
+                  onDismiss={() => setRuntimeWarning(null)}
                 >
                   {runtimeWarning}
-                </motion.div>
+                </Banner>
               ) : null}
               {updateStatus ? (
-                <motion.div
-                  key="upd"
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mb-2 rounded-2xl border border-white/12 bg-white/8 px-4 py-2 text-xs text-surface-muted"
-                  exit={{ opacity: 0, y: 8 }}
-                  initial={{ opacity: 0, y: 8 }}
-                >
+                <Banner key="upd" tone="info" onDismiss={() => setUpdateStatus(null)}>
                   {updateStatus}
-                </motion.div>
+                </Banner>
               ) : null}
               {error ? (
-                <motion.div
-                  key="err"
-                  animate={{ opacity: 1, y: 0 }}
-                  className="mb-2 flex items-center justify-between gap-3 rounded-2xl border border-rose-200/20 bg-rose-400/10 px-4 py-2 text-xs text-rose-100"
-                  exit={{ opacity: 0, y: 8 }}
-                  initial={{ opacity: 0, y: 8 }}
-                >
-                  <span className="truncate">{error}</span>
-                  <button
-                    className="rounded-full px-2 py-0.5 text-[11px] uppercase tracking-wide hover:bg-white/10"
-                    onClick={() => setError(null)}
-                  >
-                    Dismiss
-                  </button>
-                </motion.div>
+                <Banner key="err" tone="error" onDismiss={() => setError(null)}>
+                  {error}
+                </Banner>
               ) : null}
             </AnimatePresence>
 
-            <div className="message-surface mt-1 flex items-center gap-2 rounded-[1.4rem] px-3 py-2.5">
-              <input
-                aria-label="Message Alma"
-                className="w-full border-0 bg-transparent px-2 text-[14px] text-surface-ink outline-none placeholder:text-surface-muted/80"
-                data-no-drag="true"
-                disabled={captureState === "streaming" || captureState === "transcribing"}
-                maxLength={2000}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    void sendMessage(input);
-                  }
-                }}
-                placeholder="Type your message..."
-                value={input}
-              />
-
-              <Button
-                aria-label={recorder.isRecording ? "Stop recording" : "Hold to talk"}
-                className={recorder.isRecording ? "animate-pulseRing" : ""}
-                onClick={() => void toggleRecording()}
-                size="icon"
-                variant={recorder.isRecording ? "accent" : "glass"}
-              >
-                {captureState === "transcribing" || captureState === "streaming" ? (
-                  <LoaderCircle className="animate-spin" size={15} />
-                ) : (
-                  <Mic size={15} />
-                )}
-              </Button>
-              <Button
-                aria-label="Send message"
-                disabled={!input.trim() || captureState === "streaming"}
-                onClick={() => void sendMessage(input)}
-                size="icon"
-                variant="accent"
-              >
-                <SendHorizonal size={15} />
-              </Button>
-            </div>
+            <Composer
+              value={input}
+              disabled={inputDisabled}
+              recording={recorder.isRecording}
+              busy={isBusy}
+              busyState={captureState}
+              onChange={setInput}
+              onSubmit={() => void sendMessage(input)}
+              onToggleRecord={() => void toggleRecording()}
+            />
 
             {runtimeInfo ? (
-              <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-[0.15em] text-surface-muted/70">
+              <div className="mt-2 flex items-center justify-end gap-1.5 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80">
                 <span>{platformLabel}</span>
-                <span>·</span>
+                <span aria-hidden>·</span>
                 <span>v{runtimeInfo.appVersion}</span>
-                <span>·</span>
-                <span>{runtimeInfo.config.apiKeyPresent ? "API ready" : "No API key"}</span>
+                <span aria-hidden>·</span>
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1",
+                    runtimeInfo.config.apiKeyPresent ? "text-success" : "text-destructive",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "size-1 rounded-full",
+                      runtimeInfo.config.apiKeyPresent ? "bg-success" : "bg-destructive",
+                    )}
+                  />
+                  {runtimeInfo.config.apiKeyPresent ? "API ready" : "No API key"}
+                </span>
               </div>
             ) : null}
           </div>
@@ -632,4 +657,111 @@ export default function App() {
   );
 }
 
-export { ShortcutChip };
+const Composer = memo(
+  Object.assign(
+    function ComposerImpl(props: {
+      value: string;
+      disabled: boolean;
+      recording: boolean;
+      busy: boolean;
+      busyState: CaptureState;
+      onChange: (v: string) => void;
+      onSubmit: () => void;
+      onToggleRecord: () => void;
+    }) {
+      const { value, disabled, recording, busy, busyState, onChange, onSubmit, onToggleRecord } =
+        props;
+      return (
+        <div
+          className={cn(
+            "group/composer relative flex items-end gap-2 rounded-2xl border border-border bg-card/70 p-1.5 pl-3.5",
+            "shadow-sm transition-colors focus-within:border-primary/40 focus-within:bg-card/85",
+          )}
+        >
+          <textarea
+            aria-label="Message Alma"
+            data-no-drag="true"
+            disabled={disabled}
+            maxLength={2000}
+            rows={1}
+            value={value}
+            placeholder="Ask Alma anything…"
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                onSubmit();
+              }
+            }}
+            className={cn(
+              "max-h-32 min-h-[34px] flex-1 resize-none border-0 bg-transparent py-2 pr-1",
+              "text-[13.5px] leading-6 text-foreground outline-none",
+              "placeholder:text-muted-foreground/70",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          />
+          <div className="flex items-center gap-1 pb-0.5">
+            <Button
+              aria-label={recording ? "Stop recording" : "Hold to talk"}
+              aria-pressed={recording}
+              onClick={onToggleRecord}
+              size="icon"
+              variant={recording ? "destructive" : "ghost"}
+              className={cn(recording && "animate-[pulse-ring_1.8s_ease-out_infinite]")}
+            >
+              {busyState === "transcribing" || busyState === "streaming" ? (
+                <LoaderCircle className="animate-spin" />
+              ) : (
+                <Mic />
+              )}
+            </Button>
+            <Button
+              aria-label="Send message"
+              disabled={!value.trim() || busy}
+              onClick={onSubmit}
+              size="icon"
+              variant="default"
+            >
+              <SendHorizonal />
+            </Button>
+          </div>
+        </div>
+      );
+    },
+    { displayName: "Composer" },
+  ),
+);
+
+function HeaderShortcut({ keys, label }: { keys: string[]; label: string }) {
+  return (
+    <div className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground">
+      <span>{label}</span>
+      <span className="flex items-center gap-0.5">
+        {keys.map((k) => (
+          <Kbd key={k}>{k}</Kbd>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+function StatusPill({
+  tone,
+  children,
+}: {
+  tone: "success" | "info" | "muted";
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        tone === "success" && "border-success/25 bg-success/10 text-success",
+        tone === "info" && "border-primary/25 bg-primary/10 text-primary",
+        tone === "muted" && "border-border bg-card/60 text-muted-foreground",
+      )}
+    >
+      {children}
+    </span>
+  );
+}

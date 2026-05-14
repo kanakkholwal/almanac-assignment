@@ -1,7 +1,10 @@
 import path from "node:path";
+import { createRequire } from "node:module";
 
 import { app } from "electron";
-import log from "electron-log/main";
+
+const require = createRequire(import.meta.url);
+const log = require("electron-log/main.js") as typeof import("electron-log/main.js");
 
 log.initialize();
 log.transports.file.level = "info";
