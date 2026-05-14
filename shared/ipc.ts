@@ -11,6 +11,7 @@ export const IPC_CHANNELS = {
   appGetInfo: "app:get-info",
   fetchModels: "assistant:fetch-models",
   startChatCompletion: "assistant:start-chat-completion",
+  cancelChatCompletion: "assistant:cancel-chat-completion",
   transcribeAudio: "assistant:transcribe-audio",
   speechSynthesize: "assistant:speech-synthesize",
   mockEvent: "meeting:mock-event",
@@ -121,6 +122,8 @@ export const chatCompletionRequestSchema = z.object({
   messageId: z.string().min(1),
   model: z.string().min(1),
   messages: z.array(chatMessageSchema).min(1),
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().positive().max(16_000).optional(),
 });
 export type ChatCompletionRequest = z.infer<typeof chatCompletionRequestSchema>;
 

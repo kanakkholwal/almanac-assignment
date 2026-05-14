@@ -431,11 +431,6 @@ export default function App() {
 
   const isMac = runtimeInfo?.platform === "darwin";
   const modKey = isMac ? "⌘" : "Ctrl";
-  const platformLabel = isMac
-    ? "macOS"
-    : runtimeInfo?.platform === "linux"
-      ? "Linux"
-      : "Windows";
 
   const isBusy = captureState === "streaming" || captureState === "transcribing";
   const inputDisabled = isBusy;
@@ -603,19 +598,6 @@ export default function App() {
               onToggleRecord={() => void toggleRecording()}
             />
 
-            {runtimeInfo ? (
-              <div className="mt-2 flex items-center justify-end gap-2">
-                <span className="eyebrow">{platformLabel}</span>
-                <span className="eyebrow" aria-hidden>·</span>
-                <span className="eyebrow">v{runtimeInfo.appVersion}</span>
-                {runtimeInfo.config.apiKeyPresent ? null : (
-                  <>
-                    <span className="eyebrow" aria-hidden>·</span>
-                    <span className="eyebrow">No API Key</span>
-                  </>
-                )}
-              </div>
-            ) : null}
           </div>
         </div>
       </motion.div>

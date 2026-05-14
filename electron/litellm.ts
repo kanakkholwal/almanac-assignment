@@ -1,187 +1,425 @@
-import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 import type {
   ChatCompletionRequest,
   ModelOption,
   SpeechPayload,
   StreamEventPayload,
-} from "../shared/ipc.ts";
-import { modelOptionSchema, speechPayloadSchema } from "../shared/ipc.ts";
-import { sanitizeMultilineText } from "../shared/sanitize.ts";
-import { extractContentDelta } from "../shared/sse.ts";
+} from "../shared/ipc";
+import { modelOptionSchema, speechPayloadSchema } from "../shared/ipc";
+import { sanitizeMultilineText } from "../shared/sanitize";
+import { extractContentDelta } from "../shared/sse";
 
-import { getLiteLLMConfig, getLiteLLMKey, hasLiteLLMKey } from "./config";
-import { logger } from "./logger";
+import { getApiKey, getBaseUrl, getDefaults, hasApiKey } from "./config";
+import { logger, serializeError } from "./logger";
 
-function assertLiteLLMConfigured() {
-  if (!hasLiteLLMKey()) {
-    throw new Error("LITELLM_API_KEY is not configured. The desktop shell can run, but assistant features are disabled.");
+const CHAT_REQUEST_TIMEOUT_MS = 60_000;
+const CHAT_IDLE_TIMEOUT_MS = 30_000;
+const TRANSCRIBE_TIMEOUT_MS = 60_000;
+const SPEECH_TIMEOUT_MS = 30_000;
+const MODELS_TIMEOUT_MS = 10_000;
+const MODELS_CACHE_TTL_MS = 5 * 60_000;
+const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+
+export class LiteLLMError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly retriable: boolean;
+
+  constructor(message: string, status = 0, code = "UNKNOWN", retriable = false) {
+    super(message);
+    this.name = "LiteLLMError";
+    this.status = status;
+    this.code = code;
+    this.retriable = retriable;
   }
 }
 
-function endpoint(path: string) {
-  return `${getLiteLLMConfig().baseUrl.replace(/\/$/, "")}${path}`;
+function endpoint(path: string): string {
+  return `${getBaseUrl()}${path}`;
 }
 
-function headers(extra?: Record<string, string>): Record<string, string> {
-  return {
-    Authorization: `Bearer ${getLiteLLMKey()}`,
-    ...(extra ?? {}),
-  };
+function buildHeaders(extra?: Record<string, string>): Record<string, string> {
+  if (!hasApiKey()) {
+    throw new LiteLLMError(
+      "LITELLM_API_KEY is not configured. Set it in your .env to enable assistant features.",
+      0,
+      "MISSING_API_KEY",
+    );
+  }
+  return { Authorization: `Bearer ${getApiKey()}`, ...(extra ?? {}) };
 }
 
-export async function fetchModels(): Promise<ModelOption[]> {
-  if (!hasLiteLLMKey()) {
-    return [];
+function isRetriableStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || (status >= 500 && status < 600);
+}
+
+async function readErrorBody(response: Response): Promise<string> {
+  try {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const body = (await response.json()) as { error?: { message?: string } } | string;
+      if (typeof body === "string") return body;
+      return body?.error?.message ?? JSON.stringify(body).slice(0, 500);
+    }
+    return (await response.text()).slice(0, 500);
+  } catch {
+    return "";
+  }
+}
+
+interface FetchOptions extends RequestInit {
+  timeoutMs?: number;
+  retries?: number;
+  retryBaseMs?: number;
+}
+
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function requestWithRetry(url: string, init: FetchOptions): Promise<Response> {
+  const {
+    timeoutMs = 30_000,
+    retries = 0,
+    retryBaseMs = 500,
+    signal: userSignal,
+    ...rest
+  } = init;
+
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt <= retries) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new DOMException("timeout", "AbortError")), timeoutMs);
+
+    const onUserAbort = () => controller.abort(userSignal?.reason);
+    if (userSignal) {
+      if (userSignal.aborted) {
+        clearTimeout(timer);
+        throw new LiteLLMError("Request cancelled", 0, "CANCELLED", false);
+      }
+      userSignal.addEventListener("abort", onUserAbort, { once: true });
+    }
+
+    try {
+      const response = await fetch(url, { ...rest, signal: controller.signal });
+      if (response.ok) return response;
+
+      if (!isRetriableStatus(response.status) || attempt === retries) {
+        const detail = await readErrorBody(response);
+        throw new LiteLLMError(
+          detail || `Request failed (${response.status} ${response.statusText})`,
+          response.status,
+          "HTTP_ERROR",
+          isRetriableStatus(response.status),
+        );
+      }
+    } catch (error) {
+      lastError = error;
+      if (error instanceof DOMException && error.name === "AbortError") {
+        if (userSignal?.aborted) {
+          throw new LiteLLMError("Request cancelled", 0, "CANCELLED", false);
+        }
+        if (attempt === retries) {
+          throw new LiteLLMError("Request timed out", 408, "TIMEOUT", true);
+        }
+      } else if (error instanceof LiteLLMError) {
+        if (!error.retriable || attempt === retries) throw error;
+      } else if (attempt === retries) {
+        throw new LiteLLMError(
+          error instanceof Error ? error.message : "Network error",
+          0,
+          "NETWORK",
+          true,
+        );
+      }
+    } finally {
+      clearTimeout(timer);
+      userSignal?.removeEventListener("abort", onUserAbort);
+    }
+
+    attempt += 1;
+    await sleep(retryBaseMs * 2 ** (attempt - 1));
   }
 
-  const response = await fetch(endpoint("/v1/models"), {
-    headers: headers(),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Unable to fetch models (${response.status})`);
-  }
-
-  const data = (await response.json()) as { data?: Array<{ id: string; owned_by?: string }> };
-  return (data.data ?? []).map((model) =>
-    modelOptionSchema.parse({
-      id: model.id,
-      label: model.id,
-      ownedBy: model.owned_by,
-    }),
-  );
+  throw lastError instanceof Error ? lastError : new LiteLLMError("Request failed", 0, "UNKNOWN");
 }
 
-export async function* streamChatCompletion(
+let modelsCache: ModelOption[] | null = null;
+let modelsCacheAt = 0;
+let modelsInflight: Promise<ModelOption[]> | null = null;
+
+const modelsResponseSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        id: z.string(),
+        owned_by: z.string().optional(),
+      }),
+    )
+    .optional(),
+});
+
+export async function fetchModels(force = false): Promise<ModelOption[]> {
+  if (!hasApiKey()) return [];
+  if (!force && modelsCache && Date.now() - modelsCacheAt < MODELS_CACHE_TTL_MS) {
+    return modelsCache;
+  }
+  if (modelsInflight) return modelsInflight;
+
+  modelsInflight = (async () => {
+    try {
+      const response = await requestWithRetry(endpoint("/v1/models"), {
+        method: "GET",
+        headers: buildHeaders(),
+        timeoutMs: MODELS_TIMEOUT_MS,
+        retries: 2,
+      });
+      const data = modelsResponseSchema.parse(await response.json());
+      const models = (data.data ?? [])
+        .map((model) =>
+          modelOptionSchema.safeParse({
+            id: model.id,
+            label: model.id,
+            ownedBy: model.owned_by,
+          }),
+        )
+        .flatMap((result) => (result.success ? [result.data] : []));
+      modelsCache = models;
+      modelsCacheAt = Date.now();
+      return models;
+    } finally {
+      modelsInflight = null;
+    }
+  })();
+
+  return modelsInflight;
+}
+
+const activeStreams = new Map<string, AbortController>();
+
+export interface StreamRunOptions {
+  onEvent: (event: StreamEventPayload) => void;
+  signal?: AbortSignal;
+}
+
+export async function streamChatCompletion(
   request: ChatCompletionRequest,
-): AsyncGenerator<StreamEventPayload> {
-  assertLiteLLMConfigured();
+  { onEvent, signal }: StreamRunOptions,
+): Promise<void> {
+  cancelStream(request.messageId);
 
-  const response = await fetch(endpoint("/v1/chat/completions"), {
-    method: "POST",
-    headers: headers({
-      "Content-Type": "application/json",
-    }),
-    body: JSON.stringify({
-      model: request.model,
-      messages: request.messages.map((message) => ({
-        ...message,
-        content: sanitizeMultilineText(message.content),
-      })),
-      stream: true,
-    }),
-  });
-
-  if (!response.ok || !response.body) {
-    const detail = await response.text();
-    throw new Error(detail || `Chat request failed (${response.status})`);
+  const controller = new AbortController();
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason);
+    else signal.addEventListener("abort", () => controller.abort(signal.reason), { once: true });
   }
+  activeStreams.set(request.messageId, controller);
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffered = "";
+  const sanitizedMessages = request.messages.map((message) => ({
+    role: message.role,
+    content: sanitizeMultilineText(message.content, 20_000),
+  }));
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  const body = {
+    model: request.model || getDefaults().chat,
+    messages: sanitizedMessages,
+    stream: true,
+    ...(typeof request.temperature === "number" ? { temperature: request.temperature } : {}),
+    ...(typeof request.maxTokens === "number" ? { max_tokens: request.maxTokens } : {}),
+  };
+
+  let idleTimer: NodeJS.Timeout | null = null;
+  const resetIdleTimer = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(
+      () => controller.abort(new DOMException("idle-timeout", "AbortError")),
+      CHAT_IDLE_TIMEOUT_MS,
+    );
+  };
+
+  try {
+    resetIdleTimer();
+
+    const response = await fetch(endpoint("/v1/chat/completions"), {
+      method: "POST",
+      headers: buildHeaders({ "Content-Type": "application/json", Accept: "text/event-stream" }),
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const detail = await readErrorBody(response);
+      throw new LiteLLMError(
+        detail || `Chat request failed (${response.status})`,
+        response.status,
+        "HTTP_ERROR",
+      );
+    }
+    if (!response.body) {
+      throw new LiteLLMError("Streaming response has no body", 500, "NO_BODY");
     }
 
-    buffered += decoder.decode(value, { stream: true });
-    const segments = buffered.split("\n\n");
-    buffered = segments.pop() ?? "";
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let buffered = "";
 
-    for (const segment of segments) {
-      const parsed = extractContentDelta(segment);
-      if (!parsed) {
-        continue;
-      }
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      resetIdleTimer();
+      buffered += decoder.decode(value, { stream: true });
 
-      if (parsed.done) {
-        yield { messageId: request.messageId, done: true };
-        return;
-      }
+      const segments = buffered.split("\n\n");
+      buffered = segments.pop() ?? "";
 
-      if (parsed.error) {
-        yield { messageId: request.messageId, error: parsed.error };
-        return;
-      }
+      for (const segment of segments) {
+        const parsed = extractContentDelta(segment);
+        if (!parsed) continue;
 
-      if (parsed.delta) {
-        logger.debug("Stream delta received", {
-          messageId: request.messageId,
-          length: parsed.delta.length,
-        });
-        yield {
-          messageId: request.messageId,
-          delta: parsed.delta,
-        };
+        if (parsed.error) {
+          onEvent({ messageId: request.messageId, error: parsed.error });
+          return;
+        }
+
+        if (parsed.delta) {
+          onEvent({ messageId: request.messageId, delta: parsed.delta });
+        }
+
+        if (parsed.done) {
+          onEvent({ messageId: request.messageId, done: true });
+          return;
+        }
       }
     }
-  }
 
-  yield { messageId: request.messageId, done: true };
+    onEvent({ messageId: request.messageId, done: true });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      const reason = (controller.signal.reason as Error | undefined)?.message ?? "cancelled";
+      logger.info("Chat stream aborted", { messageId: request.messageId, reason });
+      onEvent({
+        messageId: request.messageId,
+        error: reason === "idle-timeout" ? "The model stopped responding." : "Cancelled",
+      });
+      return;
+    }
+
+    logger.error("Chat stream failed", serializeError(error));
+    onEvent({
+      messageId: request.messageId,
+      error: error instanceof Error ? error.message : "Chat request failed",
+    });
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer);
+    activeStreams.delete(request.messageId);
+  }
 }
 
-export async function transcribeAudio(buffer: Uint8Array, mimeType: string, model: string) {
-  assertLiteLLMConfigured();
+export function cancelStream(messageId: string): boolean {
+  const controller = activeStreams.get(messageId);
+  if (!controller) return false;
+  controller.abort(new DOMException("cancelled", "AbortError"));
+  activeStreams.delete(messageId);
+  return true;
+}
 
-  const formData = new FormData();
-  const extension = mimeType.includes("webm") ? "webm" : "wav";
-  formData.append(
-    "file",
-    new Blob([buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer], {
-      type: mimeType,
-    }),
-    `recording.${extension}`,
-  );
-  formData.append("model", model);
+export function cancelAllStreams(): void {
+  for (const [, controller] of activeStreams) {
+    controller.abort(new DOMException("cancelled", "AbortError"));
+  }
+  activeStreams.clear();
+}
 
-  const response = await fetch(endpoint("/v1/audio/transcriptions"), {
+function pickAudioExtension(mimeType: string | undefined): string {
+  if (!mimeType) return "webm";
+  if (mimeType.includes("webm")) return "webm";
+  if (mimeType.includes("ogg")) return "ogg";
+  if (mimeType.includes("mp4") || mimeType.includes("m4a")) return "m4a";
+  if (mimeType.includes("mpeg") || mimeType.includes("mp3")) return "mp3";
+  if (mimeType.includes("wav")) return "wav";
+  return "webm";
+}
+
+const transcriptionResponseSchema = z.object({
+  text: z.string().optional().default(""),
+});
+
+export async function transcribeAudio(
+  audio: ArrayBuffer | Uint8Array,
+  mimeType: string,
+  model: string,
+): Promise<string> {
+  const bytes = audio instanceof Uint8Array ? audio : new Uint8Array(audio);
+  if (bytes.byteLength === 0) {
+    throw new LiteLLMError("Audio payload is empty", 400, "EMPTY_AUDIO");
+  }
+  if (bytes.byteLength > MAX_AUDIO_BYTES) {
+    throw new LiteLLMError(
+      `Audio file exceeds the ${MAX_AUDIO_BYTES / (1024 * 1024)}MB limit`,
+      413,
+      "PAYLOAD_TOO_LARGE",
+    );
+  }
+
+  const extension = pickAudioExtension(mimeType);
+  const blob = new Blob([bytes.slice().buffer], { type: mimeType || "audio/webm" });
+  const form = new FormData();
+  form.append("file", blob, `recording.${extension}`);
+  form.append("model", model || getDefaults().transcribe);
+  form.append("response_format", "json");
+
+  const response = await requestWithRetry(endpoint("/v1/audio/transcriptions"), {
     method: "POST",
-    headers: headers(),
-    body: formData,
+    headers: buildHeaders(),
+    body: form,
+    timeoutMs: TRANSCRIBE_TIMEOUT_MS,
+    retries: 2,
   });
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Transcription failed (${response.status})`);
-  }
-
-  const data = (await response.json()) as { text?: string };
-  return sanitizeMultilineText(data.text ?? "", 4_000);
+  const data = transcriptionResponseSchema.parse(await response.json());
+  return sanitizeMultilineText(data.text, 8_000);
 }
 
-export async function synthesizeSpeech(input: string, model: string): Promise<SpeechPayload> {
-  assertLiteLLMConfigured();
+export interface SpeechOptions {
+  voice?: string;
+  format?: "mp3" | "opus" | "aac" | "flac" | "wav";
+}
 
-  const response = await fetch(endpoint("/v1/audio/speech"), {
+export async function synthesizeSpeech(
+  input: string,
+  model: string,
+  options: SpeechOptions = {},
+): Promise<SpeechPayload> {
+  const text = sanitizeMultilineText(input, 4_000).trim();
+  if (!text) {
+    throw new LiteLLMError("Speech input is empty", 400, "EMPTY_INPUT");
+  }
+
+  const voice = options.voice || getDefaults().voice;
+  const format = options.format || "mp3";
+
+  const response = await requestWithRetry(endpoint("/v1/audio/speech"), {
     method: "POST",
-    headers: headers({
-      "Content-Type": "application/json",
-    }),
+    headers: buildHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({
-      model,
-      input: sanitizeMultilineText(input, 4_000),
-      voice: "alloy",
-      format: "mp3",
+      model: model || getDefaults().speech,
+      input: text,
+      voice,
+      response_format: format,
     }),
+    timeoutMs: SPEECH_TIMEOUT_MS,
+    retries: 2,
   });
 
-  if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Speech synthesis failed (${response.status})`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
-  const mimeType = response.headers.get("content-type") ?? "audio/mpeg";
-  const base64 = Buffer.from(arrayBuffer).toString("base64");
+  const buffer = await response.arrayBuffer();
+  const mimeType = response.headers.get("content-type") ?? `audio/${format === "mp3" ? "mpeg" : format}`;
+  const base64 = Buffer.from(buffer).toString("base64");
 
   return speechPayloadSchema.parse({
     audioUrl: `data:${mimeType};base64,${base64}`,
     mimeType,
   });
 }
-
-export const createMessageId = randomUUID;

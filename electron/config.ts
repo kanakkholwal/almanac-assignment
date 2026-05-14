@@ -1,14 +1,11 @@
 import "dotenv/config";
 
-import { createRequire } from "node:module";
+import { app } from "electron";
 import { z } from "zod";
 
-import type { AppRuntimeInfo, LiteLLMConfig } from "../shared/ipc.ts";
+import type { AppRuntimeInfo, LiteLLMConfig } from "../shared/ipc";
 
 import { logger } from "./logger";
-
-const require = createRequire(import.meta.url);
-const { app } = require("electron/main") as typeof import("electron");
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
@@ -17,39 +14,65 @@ const envSchema = z.object({
   VITE_DEFAULT_CHAT_MODEL: z.string().min(1).default("gpt-4o-mini"),
   VITE_DEFAULT_TRANSCRIBE_MODEL: z.string().min(1).default("gpt-4o-mini-transcribe"),
   VITE_DEFAULT_TTS_MODEL: z.string().min(1).default("gpt-4o-mini-tts"),
+  VITE_DEFAULT_TTS_VOICE: z.string().min(1).default("alloy"),
   VITE_ENABLE_AUTO_UPDATE: z
     .string()
     .optional()
     .transform((value) => value === "true"),
 });
 
-type ParsedEnv = z.infer<typeof envSchema>;
+export type ParsedEnv = z.infer<typeof envSchema>;
 
-let parsedEnv: ParsedEnv | null = null;
+let parsed: ParsedEnv | null = null;
 
-export function getEnv() {
-  if (parsedEnv) {
-    return parsedEnv;
-  }
+export function getEnv(): ParsedEnv {
+  if (parsed) return parsed;
 
   const result = envSchema.safeParse(process.env);
   if (!result.success) {
     logger.error("Environment validation failed", result.error.flatten());
     throw new Error(
-      `Environment validation failed: ${result.error.issues.map((issue) => issue.message).join(", ")}`,
+      `Environment validation failed: ${result.error.issues
+        .map((issue) => `${issue.path.join(".")} — ${issue.message}`)
+        .join("; ")}`,
     );
   }
 
-  parsedEnv = result.data;
-  return parsedEnv;
+  parsed = result.data;
+  return parsed;
+}
+
+export function getBaseUrl(): string {
+  return getEnv().VITE_LITELLM_BASE_URL.replace(/\/$/, "");
+}
+
+export function getApiKey(): string {
+  return getEnv().LITELLM_API_KEY.trim();
+}
+
+export function hasApiKey(): boolean {
+  return getApiKey().length > 0;
+}
+
+export function getDefaults() {
+  const env = getEnv();
+  return {
+    chat: env.VITE_DEFAULT_CHAT_MODEL,
+    transcribe: env.VITE_DEFAULT_TRANSCRIBE_MODEL,
+    speech: env.VITE_DEFAULT_TTS_MODEL,
+    voice: env.VITE_DEFAULT_TTS_VOICE,
+  };
+}
+
+export function isAutoUpdateEnabled(): boolean {
+  return getEnv().VITE_ENABLE_AUTO_UPDATE;
 }
 
 export function getLiteLLMConfig(): LiteLLMConfig {
   const env = getEnv();
-
   return {
-    baseUrl: env.VITE_LITELLM_BASE_URL,
-    apiKeyPresent: Boolean(env.LITELLM_API_KEY),
+    baseUrl: getBaseUrl(),
+    apiKeyPresent: hasApiKey(),
     defaultChatModel: env.VITE_DEFAULT_CHAT_MODEL,
     defaultTranscribeModel: env.VITE_DEFAULT_TRANSCRIBE_MODEL,
     defaultSpeechModel: env.VITE_DEFAULT_TTS_MODEL,
@@ -60,23 +83,10 @@ export function getLiteLLMConfig(): LiteLLMConfig {
 
 export function getRuntimeInfo(): AppRuntimeInfo {
   const env = getEnv();
-
   return {
     platform: process.platform as AppRuntimeInfo["platform"],
     appVersion: app.getVersion(),
     environment: env.NODE_ENV,
     config: getLiteLLMConfig(),
   };
-}
-
-export function getLiteLLMKey() {
-  return getEnv().LITELLM_API_KEY.trim();
-}
-
-export function hasLiteLLMKey() {
-  return getLiteLLMKey().length > 0;
-}
-
-export function isAutoUpdateEnabled() {
-  return getEnv().VITE_ENABLE_AUTO_UPDATE;
 }

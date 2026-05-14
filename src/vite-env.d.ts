@@ -30,8 +30,9 @@ declare global {
       closeWindow: () => Promise<void>;
       getWindowState: () => Promise<WindowState>;
       getRuntimeInfo: () => Promise<AppRuntimeInfo>;
-      fetchModels: () => Promise<ModelOption[]>;
+      fetchModels: (force?: boolean) => Promise<ModelOption[]>;
       startChatCompletion: (request: ChatCompletionRequest) => Promise<void>;
+      cancelChatCompletion: (messageId: string) => Promise<boolean>;
       transcribeAudio: (
         audio: ArrayBuffer,
         mimeType: string,

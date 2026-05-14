@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 
-import type { Rectangle } from "electron";
+import { app, type Rectangle } from "electron";
 
 import type { WindowMode } from "../shared/ipc";
+
+import { logger, serializeError } from "./logger";
 
 export interface PersistedWindowState {
   bounds: Rectangle;
@@ -13,43 +14,36 @@ export interface PersistedWindowState {
   alwaysOnTop: boolean;
 }
 
-const require = createRequire(import.meta.url);
-const { app } = require("electron/main") as typeof import("electron");
-
 const DEFAULT_WINDOW_STATE: PersistedWindowState = {
-  bounds: {
-    x: 0,
-    y: 0,
-    width: 712,
-    height: 528,
-  },
+  bounds: { x: 0, y: 0, width: 760, height: 620 },
   isMaximized: false,
-  mode: "expanded",
+  mode: "compact",
   alwaysOnTop: true,
 };
 
-function getWindowStatePath() {
+function getWindowStatePath(): string {
   return path.join(app.getPath("userData"), "window-state.json");
 }
 
 export function readWindowState(): PersistedWindowState {
   try {
     const raw = fs.readFileSync(getWindowStatePath(), "utf8");
-    const parsed = JSON.parse(raw) as PersistedWindowState;
+    const parsed = JSON.parse(raw) as Partial<PersistedWindowState>;
     return {
       ...DEFAULT_WINDOW_STATE,
       ...parsed,
-      bounds: {
-        ...DEFAULT_WINDOW_STATE.bounds,
-        ...parsed.bounds,
-      },
+      bounds: { ...DEFAULT_WINDOW_STATE.bounds, ...(parsed.bounds ?? {}) },
     };
   } catch {
     return DEFAULT_WINDOW_STATE;
   }
 }
 
-export function writeWindowState(state: PersistedWindowState) {
-  fs.mkdirSync(path.dirname(getWindowStatePath()), { recursive: true });
-  fs.writeFileSync(getWindowStatePath(), JSON.stringify(state, null, 2), "utf8");
+export function writeWindowState(state: PersistedWindowState): void {
+  try {
+    fs.mkdirSync(path.dirname(getWindowStatePath()), { recursive: true });
+    fs.writeFileSync(getWindowStatePath(), JSON.stringify(state, null, 2), "utf8");
+  } catch (error) {
+    logger.warn("Failed to persist window state", serializeError(error));
+  }
 }

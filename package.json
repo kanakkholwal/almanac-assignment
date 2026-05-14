@@ -2,18 +2,16 @@
   "name": "almanac-desktop",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "description": "Floating desktop AI assistant for meetings and chat.",
-  "main": "electron/main.cjs",
+  "main": "dist-electron/main.js",
   "scripts": {
-    "start": "node scripts/run-electron.cjs .",
-    "start:electron": "node scripts/run-electron.cjs .",
+    "start": "electron .",
     "dev": "concurrently -k \"pnpm dev:react\" \"pnpm dev:electron\"",
     "dev:react": "vite",
-    "dev:electron": "wait-on http://127.0.0.1:5173 && cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://127.0.0.1:5173 node scripts/run-electron.cjs .",
+    "dev:electron": "wait-on http://127.0.0.1:5173 && pnpm build:electron && cross-env NODE_ENV=development VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
     "build": "pnpm build:react && pnpm build:electron",
     "build:react": "vite build",
-    "build:electron": "node -e \"console.log('Electron uses checked-in CommonJS entrypoints: electron/main.cjs and electron/preload.cjs')\"",
+    "build:electron": "tsup --config tsup.electron.config.ts",
     "build:prod": "cross-env NODE_ENV=production pnpm build",
     "dist": "pnpm build && electron-builder",
     "dist:win": "pnpm build && electron-builder --win nsis",
@@ -53,6 +51,7 @@
     "electron-builder": "^24.13.3",
     "jsdom": "^26.1.0",
     "postcss": "^8.5.3",
+    "postcss-load-config": "^6.0.1",
     "tailwindcss": "^4.0.0",
     "tw-animate-css": "^1.2.0",
     "tsup": "^8.5.0",
@@ -76,11 +75,11 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*.cjs",
+      "dist-electron/**/*",
       "package.json"
     ],
     "extraMetadata": {
-      "main": "electron/main.cjs"
+      "main": "dist-electron/main.js"
     },
     "publish": [
       {

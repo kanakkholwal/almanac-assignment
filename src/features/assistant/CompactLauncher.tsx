@@ -4,7 +4,6 @@ import {
   Maximize2,
   MessageSquareText,
   MonitorUp,
-  Settings,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,7 +31,6 @@ export function CompactLauncher({
   const tools: ToolAction[] = [
     { label: "Voice output", icon: Headphones, onClick: onCapture },
     { label: "Capture screen", icon: MonitorUp, onClick: onCapture },
-    { label: "Settings", icon: Settings, onClick: () => {} },
     { label: "Expand", icon: Maximize2, onClick: onOpenChat },
   ];
 
@@ -43,30 +41,31 @@ export function CompactLauncher({
       initial={{ opacity: 0, y: 4, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: "spring", stiffness: 380, damping: 30 }}
-      className="surface-card flex h-full w-full flex-col gap-1 rounded-sm p-2"
+      className="surface-card flex h-full w-full flex-col justify-between gap-3 rounded-sm p-4"
     >
-      <ShortcutRow
-        icon={MessageSquareText}
-        label="Ask Alma"
-        keys={[modKey, "↵"]}
-        onClick={onOpenChat}
-      />
-      <ShortcutRow
-        icon={MonitorUp}
-        label="Capture"
-        keys={[modKey, "S"]}
-        onClick={onCapture}
-      />
+      <div className="flex flex-col gap-2.5">
+        <ShortcutRow
+          icon={MessageSquareText}
+          label="Ask Alma"
+          keys={[modKey, "↵"]}
+          onClick={onOpenChat}
+        />
+        <ShortcutRow
+          icon={MonitorUp}
+          label="Capture"
+          keys={[modKey, "S"]}
+          onClick={onCapture}
+        />
+      </div>
 
-      <div className="mt-auto flex items-center justify-between gap-1 border-t border-hairline pt-2">
+      <div className="flex items-center justify-around gap-2" data-no-drag="true">
         {tools.map(({ label, icon: Icon, onClick }) => (
           <Button
             key={label}
             aria-label={label}
             onClick={onClick}
-            size="icon-sm"
-            variant="ghost"
-            data-no-drag="true"
+            size="icon"
+            variant="outline"
           >
             <Icon />
           </Button>
@@ -93,14 +92,14 @@ function ShortcutRow({
       data-no-drag="true"
       onClick={onClick}
       className={cn(
-        "group flex items-center justify-between gap-3 rounded-pill border border-transparent px-2.5 py-1.5 text-left",
-        "transition-colors hover:border-border hover:bg-white/3",
+        "group flex items-center justify-between gap-3 rounded-sm px-1 py-1 text-left",
+        "transition-colors hover:bg-white/3",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       )}
     >
       <span className="flex items-center gap-2">
         <Icon className="size-3.5 text-muted-foreground transition-colors group-hover:text-foreground" />
-        <span className="font-sans text-[13px] text-foreground">{label}</span>
+        <span className="font-sans text-[14px] text-foreground">{label}</span>
       </span>
       <span className="flex items-center gap-1">
         {keys.map((k) => (

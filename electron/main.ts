@@ -1,7 +1,18 @@
-import "dotenv/config";
+import path from "node:path";
 
-import { createRequire } from "node:module";
-import type { BrowserWindow, Tray as TrayType } from "electron";
+import {
+  app,
+  BrowserWindow,
+  crashReporter,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeTheme,
+  screen,
+  Tray,
+} from "electron";
+import type { BrowserWindow as BrowserWindowType } from "electron";
 
 import {
   appEventSchema,
@@ -12,38 +23,58 @@ import {
   type AppEvent,
   type MockMeetingEvent,
   type WindowMode,
-} from "../shared/ipc.ts";
+} from "../shared/ipc";
 
-import { getRuntimeInfo } from "./config";
-import { fetchModels, streamChatCompletion, synthesizeSpeech, transcribeAudio } from "./litellm";
+import { getRuntimeInfo, hasApiKey } from "./config";
+import {
+  cancelAllStreams,
+  cancelStream,
+  fetchModels,
+  streamChatCompletion,
+  synthesizeSpeech,
+  transcribeAudio,
+} from "./litellm";
 import { logger, serializeError } from "./logger";
 import { setupAutoUpdates } from "./updater";
-import { createMainWindow, getAppIcon, getWindowState, applyWindowMode } from "./window";
+import {
+  applyWindowMode,
+  createMainWindow,
+  getAppIcon,
+  getWindowState,
+} from "./window";
 import { readWindowState, writeWindowState } from "./window-state";
 
-const require = createRequire(import.meta.url);
-const { app, dialog, globalShortcut, ipcMain, Menu, nativeTheme, Tray } =
-  require("electron/main") as typeof import("electron");
+if (process.platform === "win32") {
+  app.disableHardwareAcceleration();
+}
 
-let mainWindow: BrowserWindow | null = null;
-let tray: TrayType | null = null;
-let windowMode: WindowMode = "expanded";
+let mainWindow: BrowserWindowType | null = null;
+let notificationWindow: BrowserWindowType | null = null;
+let tray: Tray | null = null;
+let windowMode: WindowMode = "compact";
 let alwaysOnTop = true;
 let isQuitting = false;
 
+const NOTIFICATION_SIZE = { width: 540, height: 200 } as const;
+
+interface NotificationPayload {
+  title: string;
+  description: string;
+  actionLabel: string;
+}
+
 function sendAppEvent(event: AppEvent) {
-  if (!mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const parsed = appEventSchema.safeParse(event);
+  if (!parsed.success) {
+    logger.warn("Dropped invalid app event", parsed.error.flatten());
     return;
   }
-
-  mainWindow.webContents.send(IPC_CHANNELS.appEvent, appEventSchema.parse(event));
+  mainWindow.webContents.send(IPC_CHANNELS.appEvent, parsed.data);
 }
 
 function persistWindowState() {
-  if (!mainWindow) {
-    return;
-  }
-
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   writeWindowState({
     bounds: mainWindow.getBounds(),
     isMaximized: mainWindow.isMaximized(),
@@ -53,10 +84,7 @@ function persistWindowState() {
 }
 
 function syncWindowState() {
-  if (!mainWindow) {
-    return;
-  }
-
+  if (!mainWindow || mainWindow.isDestroyed()) return;
   sendAppEvent({
     type: "window-state",
     state: getWindowState(mainWindow, windowMode, alwaysOnTop),
@@ -64,49 +92,47 @@ function syncWindowState() {
 }
 
 function updateTrayMenu() {
-  if (!tray || !mainWindow) {
-    return;
-  }
-
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: "Open Almanac",
-      click: () => {
-        mainWindow?.show();
-        mainWindow?.focus();
+  if (!tray || !mainWindow) return;
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      {
+        label: "Open Almanac",
+        click: () => {
+          mainWindow?.show();
+          mainWindow?.focus();
+        },
       },
-    },
-    {
-      label: alwaysOnTop ? "Disable Always On Top" : "Enable Always On Top",
-      click: () => {
-        alwaysOnTop = !alwaysOnTop;
-        mainWindow?.setAlwaysOnTop(alwaysOnTop, "screen-saver");
-        persistWindowState();
-        syncWindowState();
-        updateTrayMenu();
+      {
+        label: alwaysOnTop ? "Disable Always On Top" : "Enable Always On Top",
+        click: () => {
+          alwaysOnTop = !alwaysOnTop;
+          mainWindow?.setAlwaysOnTop(alwaysOnTop, "screen-saver");
+          persistWindowState();
+          syncWindowState();
+          updateTrayMenu();
+        },
       },
-    },
-    { type: "separator" },
-    { role: "reload", label: "Reload" },
-    { role: "forceReload", label: "Force Reload" },
-    { type: "separator" },
-    {
-      label: "Quit",
-      accelerator: "CmdOrCtrl+Q",
-      click: () => {
-        isQuitting = true;
-        app.quit();
+      { type: "separator" },
+      { role: "reload", label: "Reload" },
+      { role: "forceReload", label: "Force Reload" },
+      { type: "separator" },
+      {
+        label: "Quit",
+        accelerator: "CmdOrCtrl+Q",
+        click: () => {
+          isQuitting = true;
+          app.quit();
+        },
       },
-    },
-  ]);
-
-  tray.setContextMenu(contextMenu);
+    ]),
+  );
 }
 
 function buildApplicationMenu() {
+  const isMac = process.platform === "darwin";
   const template: Electron.MenuItemConstructorOptions[] = [
-    ...(process.platform === "darwin"
-      ? [
+    ...(isMac
+      ? ([
           {
             label: app.name,
             submenu: [
@@ -120,8 +146,8 @@ function buildApplicationMenu() {
               { type: "separator" },
               { role: "quit", accelerator: "Cmd+Q" },
             ],
-          } satisfies Electron.MenuItemConstructorOptions,
-        ]
+          },
+        ] satisfies Electron.MenuItemConstructorOptions[])
       : []),
     {
       label: "File",
@@ -148,29 +174,21 @@ function buildApplicationMenu() {
         { role: "resetZoom" },
         { role: "zoomIn" },
         { role: "zoomOut" },
-        { type: "separator" },
-        { role: "togglefullscreen" },
       ],
     },
     {
       label: "Window",
-      submenu: [
-        { role: "minimize" },
-        { role: "zoom" },
-        { role: "front" },
-      ],
+      submenu: [{ role: "minimize" }, { role: "zoom" }, { role: "front" }],
     },
   ];
-
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-function attachWindowLifecycle(win: BrowserWindow) {
+function attachWindowLifecycle(win: BrowserWindowType) {
   const save = () => {
     persistWindowState();
     syncWindowState();
   };
-
   win.on("move", save);
   win.on("resize", save);
   win.on("maximize", save);
@@ -180,7 +198,6 @@ function attachWindowLifecycle(win: BrowserWindow) {
   win.on("closed", () => {
     mainWindow = null;
   });
-
   win.on("close", (event) => {
     if (!isQuitting) {
       event.preventDefault();
@@ -188,18 +205,14 @@ function attachWindowLifecycle(win: BrowserWindow) {
       syncWindowState();
     }
   });
-
   win.webContents.on("render-process-gone", (_event, details) => {
     logger.error("Renderer process crashed", details);
     dialog.showErrorBox(
       "Almanac renderer crashed",
       `The UI process exited (${details.reason}). Almanac will reload the window.`,
     );
-    if (!win.isDestroyed()) {
-      win.reload();
-    }
+    if (!win.isDestroyed()) win.reload();
   });
-
   win.webContents.on("unresponsive", () => {
     logger.warn("Window became unresponsive");
     sendAppEvent({
@@ -210,43 +223,114 @@ function attachWindowLifecycle(win: BrowserWindow) {
 }
 
 function createWindow() {
-  const savedState = readWindowState();
-  windowMode = savedState.mode;
-  alwaysOnTop = savedState.alwaysOnTop;
-  mainWindow = createMainWindow(savedState);
+  const saved = readWindowState();
+  windowMode = saved.mode;
+  alwaysOnTop = saved.alwaysOnTop;
+  mainWindow = createMainWindow(saved);
   attachWindowLifecycle(mainWindow);
   syncWindowState();
   return mainWindow;
 }
 
 function toggleWindow() {
-  if (!mainWindow) {
-    return;
-  }
-
-  if (mainWindow.isVisible()) {
-    mainWindow.hide();
-  } else {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isVisible()) mainWindow.hide();
+  else {
     mainWindow.show();
     mainWindow.focus();
   }
+  syncWindowState();
+}
 
+function resolveNotificationUrl(): string {
+  const base = process.env.VITE_DEV_SERVER_URL
+    ? process.env.VITE_DEV_SERVER_URL
+    : `file://${path.join(__dirname, "../dist/index.html")}`;
+  const separator = base.includes("#") ? "&" : "#";
+  return `${base}${separator}notification`;
+}
+
+function createNotificationWindow(payload: NotificationPayload | null) {
+  if (notificationWindow && !notificationWindow.isDestroyed()) {
+    if (payload) {
+      notificationWindow.webContents.send(IPC_CHANNELS.notificationData, payload);
+    }
+    notificationWindow.showInactive();
+    return;
+  }
+
+  const workArea = screen.getPrimaryDisplay().workArea;
+  const x = workArea.x + Math.round((workArea.width - NOTIFICATION_SIZE.width) / 2);
+  const y = workArea.y + 16;
+  const isWin = process.platform === "win32";
+
+  notificationWindow = new BrowserWindow({
+    width: NOTIFICATION_SIZE.width,
+    height: NOTIFICATION_SIZE.height,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    hasShadow: false,
+    roundedCorners: false,
+    skipTaskbar: true,
+    focusable: true,
+    alwaysOnTop: true,
+    ...(isWin ? { backgroundMaterial: "none" as const } : {}),
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      additionalArguments: ["--almanac-view=notification"],
+    },
+  });
+
+  if (isWin && typeof notificationWindow.setBackgroundColor === "function") {
+    notificationWindow.setBackgroundColor("#00000000");
+  }
+
+  notificationWindow.setAlwaysOnTop(true, "screen-saver");
+  void notificationWindow.loadURL(resolveNotificationUrl());
+
+  notificationWindow.webContents.once("did-finish-load", () => {
+    if (payload) {
+      notificationWindow?.webContents.send(IPC_CHANNELS.notificationData, payload);
+    }
+  });
+  notificationWindow.once("ready-to-show", () => notificationWindow?.showInactive());
+  notificationWindow.on("closed", () => {
+    notificationWindow = null;
+  });
+}
+
+function closeNotificationWindow() {
+  if (notificationWindow && !notificationWindow.isDestroyed()) {
+    notificationWindow.close();
+  }
+  notificationWindow = null;
+}
+
+function setMode(mode: WindowMode) {
+  windowMode = mode;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  applyWindowMode(mainWindow, mode);
+  persistWindowState();
   syncWindowState();
 }
 
 function registerIpc() {
-  ipcMain.handle(IPC_CHANNELS.windowToggle, async () => {
-    toggleWindow();
-  });
+  ipcMain.handle(IPC_CHANNELS.windowToggle, async () => toggleWindow());
 
   ipcMain.handle(IPC_CHANNELS.windowMode, async (_event, input: unknown) => {
     const mode = windowModeSchema.parse(input);
-    windowMode = mode;
-    if (mainWindow) {
-      applyWindowMode(mainWindow, mode);
-      persistWindowState();
-      syncWindowState();
-    }
+    setMode(mode);
   });
 
   ipcMain.handle(IPC_CHANNELS.windowAlwaysOnTop, async (_event, input: unknown) => {
@@ -257,21 +341,12 @@ function registerIpc() {
     updateTrayMenu();
   });
 
-  ipcMain.handle(IPC_CHANNELS.windowMinimize, async () => {
-    mainWindow?.minimize();
-  });
+  ipcMain.handle(IPC_CHANNELS.windowMinimize, async () => mainWindow?.minimize());
 
   ipcMain.handle(IPC_CHANNELS.windowMaximizeToggle, async () => {
-    if (!mainWindow) {
-      return;
-    }
-
-    if (mainWindow.isMaximized()) {
-      mainWindow.unmaximize();
-    } else {
-      mainWindow.maximize();
-    }
-
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    else mainWindow.maximize();
     persistWindowState();
     syncWindowState();
   });
@@ -282,39 +357,45 @@ function registerIpc() {
   });
 
   ipcMain.handle(IPC_CHANNELS.windowGetState, async () => {
-    if (!mainWindow) {
-      throw new Error("Window unavailable");
-    }
-
+    if (!mainWindow) throw new Error("Window unavailable");
     return getWindowState(mainWindow, windowMode, alwaysOnTop);
   });
 
   ipcMain.handle(IPC_CHANNELS.appGetInfo, async () => getRuntimeInfo());
-  ipcMain.handle(IPC_CHANNELS.fetchModels, async () => fetchModels());
+
+  ipcMain.handle(IPC_CHANNELS.fetchModels, async (_event, force?: unknown) =>
+    fetchModels(Boolean(force)),
+  );
 
   ipcMain.handle(IPC_CHANNELS.startChatCompletion, async (_event, input: unknown) => {
-    const request = chatCompletionRequestSchema.parse(input);
-    if (!mainWindow) {
-      return;
+    if (!hasApiKey()) {
+      throw new Error("LITELLM_API_KEY is not configured.");
     }
+    const request = chatCompletionRequestSchema.parse(input);
+    if (!mainWindow || mainWindow.isDestroyed()) return;
 
-    void (async () => {
-      try {
-        for await (const event of streamChatCompletion(request)) {
-          mainWindow?.webContents.send(IPC_CHANNELS.assistantStream, event);
-        }
-      } catch (error) {
-        logger.error("Chat completion failed", serializeError(error));
-        mainWindow?.webContents.send(IPC_CHANNELS.assistantStream, {
-          messageId: request.messageId,
-          error: error instanceof Error ? error.message : "Chat request failed",
-        });
-      }
-    })();
+    void streamChatCompletion(request, {
+      onEvent: (event) => {
+        mainWindow?.webContents.send(IPC_CHANNELS.assistantStream, event);
+      },
+    }).catch((error) => {
+      logger.error("Chat completion failed", serializeError(error));
+      mainWindow?.webContents.send(IPC_CHANNELS.assistantStream, {
+        messageId: request.messageId,
+        error: error instanceof Error ? error.message : "Chat request failed",
+      });
+    });
   });
 
-  ipcMain.handle(IPC_CHANNELS.transcribeAudio, async (_event, audio: ArrayBuffer, mimeType: string, model: string) =>
-    transcribeAudio(new Uint8Array(audio), mimeType, model),
+  ipcMain.handle(IPC_CHANNELS.cancelChatCompletion, async (_event, messageId: unknown) => {
+    if (typeof messageId !== "string") return false;
+    return cancelStream(messageId);
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.transcribeAudio,
+    async (_event, audio: ArrayBuffer, mimeType: string, model: string) =>
+      transcribeAudio(new Uint8Array(audio), mimeType, model),
   );
 
   ipcMain.handle(IPC_CHANNELS.speechSynthesize, async (_event, input: string, model: string) =>
@@ -325,9 +406,39 @@ function registerIpc() {
     const mockEvent: MockMeetingEvent = mockMeetingEventSchema.parse(input);
     mainWindow?.webContents.send(IPC_CHANNELS.mockEvent, mockEvent);
   });
+
+  ipcMain.handle(IPC_CHANNELS.notificationShow, async (_event, payload: unknown) => {
+    const valid =
+      payload &&
+      typeof payload === "object" &&
+      typeof (payload as Record<string, unknown>).title === "string" &&
+      typeof (payload as Record<string, unknown>).description === "string" &&
+      typeof (payload as Record<string, unknown>).actionLabel === "string";
+    createNotificationWindow(valid ? (payload as NotificationPayload) : null);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.notificationStartNotes, async () => {
+    closeNotificationWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC_CHANNELS.notificationStartNotes);
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.notificationDismiss, async () => {
+    closeNotificationWindow();
+  });
 }
 
 async function bootstrap() {
+  crashReporter.start({
+    productName: "Almanac",
+    companyName: "Memfold",
+    uploadToServer: false,
+    compress: true,
+  });
+
   await app.whenReady();
 
   nativeTheme.themeSource = "dark";
@@ -344,6 +455,14 @@ async function bootstrap() {
 
   registerIpc();
 
+  setTimeout(() => {
+    createNotificationWindow({
+      title: "Start Alma Notes",
+      description: "Take notes & get suggestions in real time",
+      actionLabel: "Take Notes",
+    });
+  }, 1400);
+
   setupAutoUpdates((status, detail) => {
     sendAppEvent({
       type: "update-status",
@@ -353,9 +472,8 @@ async function bootstrap() {
   });
 
   app.on("activate", () => {
-    if (!mainWindow) {
-      createWindow();
-    } else {
+    if (!mainWindow) createWindow();
+    else {
       mainWindow.show();
       mainWindow.focus();
     }
@@ -365,9 +483,8 @@ async function bootstrap() {
 process.on("uncaughtException", (error) => {
   logger.error("Uncaught exception", serializeError(error));
 });
-
-process.on("unhandledRejection", (error) => {
-  logger.error("Unhandled rejection", serializeError(error));
+process.on("unhandledRejection", (reason) => {
+  logger.error("Unhandled rejection", serializeError(reason));
 });
 
 void bootstrap().catch((error) => {
@@ -381,15 +498,15 @@ void bootstrap().catch((error) => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  cancelAllStreams();
   persistWindowState();
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin" && isQuitting) {
-    app.quit();
-  }
+  if (process.platform !== "darwin" && isQuitting) app.quit();
 });
 
 app.on("will-quit", () => {
+  cancelAllStreams();
   globalShortcut.unregisterAll();
 });
