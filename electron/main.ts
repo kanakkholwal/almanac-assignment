@@ -500,6 +500,10 @@ function registerIpc() {
     closeNotificationWindow();
   });
 
+  ipcMain.handle(IPC_CHANNELS.notesShow, async () => {
+    createNotesWindow();
+  });
+
   ipcMain.handle(IPC_CHANNELS.notesStop, async () => {
     closeNotesWindow();
   });

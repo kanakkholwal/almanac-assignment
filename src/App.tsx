@@ -454,7 +454,7 @@ export default function App() {
           >
             <Suspense fallback={<LazyFallback />}>
               <CompactLauncher
-                onCapture={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
+                onCapture={() => void window.almanac?.notesShow()}
                 onOpenChat={() => setWindowMode("expanded")}
                 modKey={modKey}
               />
@@ -485,7 +485,7 @@ export default function App() {
             <ShortcutAction
               label="Capture"
               keys={[modKey, "S"]}
-              onClick={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
+              onClick={() => void window.almanac?.notesShow()}
             />
           </div>
 
@@ -502,7 +502,7 @@ export default function App() {
             </Button>
             <Button
               aria-label="Capture screen"
-              onClick={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
+              onClick={() => void window.almanac?.notesShow()}
               size="icon-sm"
               variant="ghost"
               title="Capture screen"

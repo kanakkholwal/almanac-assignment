@@ -43,6 +43,7 @@ declare global {
       showNotification: (payload: NotificationPayload) => Promise<void>;
       notificationStartNotes: () => Promise<void>;
       notificationDismiss: () => Promise<void>;
+      notesShow: () => Promise<void>;
       notesStop: () => Promise<void>;
       notesOpenChat: () => Promise<void>;
       onAssistantStream: (listener: (payload: StreamEventPayload) => void) => () => void;

@@ -81,6 +81,7 @@ const api = {
     invoke<void>(IPC_CHANNELS.notificationShow, payload),
   notificationStartNotes: () => invoke<void>(IPC_CHANNELS.notificationStartNotes),
   notificationDismiss: () => invoke<void>(IPC_CHANNELS.notificationDismiss),
+  notesShow: () => invoke<void>(IPC_CHANNELS.notesShow),
   notesStop: () => invoke<void>(IPC_CHANNELS.notesStop),
   notesOpenChat: () => invoke<void>(IPC_CHANNELS.notesOpenChat),
 

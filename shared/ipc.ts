@@ -21,6 +21,7 @@ export const IPC_CHANNELS = {
   notificationStartNotes: "notification:start-notes",
   notificationDismiss: "notification:dismiss",
   notificationData: "notification:data",
+  notesShow: "notes:show",
   notesStop: "notes:stop",
   notesOpenChat: "notes:open-chat",
 } as const;
