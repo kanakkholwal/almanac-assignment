@@ -224,6 +224,10 @@ function attachWindowLifecycle(win: BrowserWindowType) {
 
 function createWindow() {
   const saved = readWindowState();
+  // The launcher is always the home surface; expanded chat is a transient
+  // "summoned" view. Boot into compact regardless of last-saved mode.
+  saved.mode = "compact";
+  saved.isMaximized = false;
   windowMode = saved.mode;
   alwaysOnTop = saved.alwaysOnTop;
   mainWindow = createMainWindow(saved);
@@ -454,14 +458,6 @@ async function bootstrap() {
   globalShortcut.register("CommandOrControl+Shift+A", () => toggleWindow());
 
   registerIpc();
-
-  setTimeout(() => {
-    createNotificationWindow({
-      title: "Start Alma Notes",
-      description: "Take notes & get suggestions in real time",
-      actionLabel: "Take Notes",
-    });
-  }, 1400);
 
   setupAutoUpdates((status, detail) => {
     sendAppEvent({

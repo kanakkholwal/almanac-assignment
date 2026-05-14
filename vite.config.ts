@@ -1,4 +1,5 @@
 import react from "@vitejs/plugin-react";
+// @ts-expect-error — no published types; resolved at runtime
 import tailwindcss from "@tailwindcss/postcss";
 import path from "node:path";
 import { defineConfig } from "vite";

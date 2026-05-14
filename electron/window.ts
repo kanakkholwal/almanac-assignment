@@ -12,7 +12,7 @@ import type { WindowMode, WindowState } from "../shared/ipc";
 import type { PersistedWindowState } from "./window-state";
 
 export const WINDOW_SIZES: Record<WindowMode, { width: number; height: number }> = {
-  compact: { width: 228, height: 232 },
+  compact: { width: 220, height: 176 },
   notes: { width: 96, height: 232 },
   expanded: { width: 760, height: 620 },
 };
@@ -77,13 +77,13 @@ export function createMainWindow(initialState: PersistedWindowState): BrowserWin
   const win = new BrowserWindow({
     width,
     height,
-    minWidth: WINDOW_SIZES.notes.width,
-    minHeight: WINDOW_SIZES.notes.height,
+    minWidth: 80,
+    minHeight: 80,
     x,
     y,
     frame: false,
     transparent: true,
-    resizable: !isFloating,
+    resizable: true,
     maximizable: !isFloating,
     minimizable: true,
     hasShadow: false,
@@ -184,7 +184,6 @@ export function applyWindowMode(win: BrowserWindowType, mode: WindowMode): void 
     };
   }
 
-  win.setResizable(!isFloating);
   win.setMaximizable(!isFloating);
   win.setSkipTaskbar(isFloating);
   animateBounds(win, target);

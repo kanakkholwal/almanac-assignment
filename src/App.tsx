@@ -169,7 +169,7 @@ function Banner({
 }
 
 export default function App() {
-  const [windowMode, setWindowMode] = useState<WindowMode>("expanded");
+  const [windowMode, setWindowMode] = useState<WindowMode>("compact");
   const [windowState, setWindowState] = useState<WindowState | null>(null);
   const [runtimeInfo, setRuntimeInfo] = useState<AppRuntimeInfo | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>(() => loadSeedTimeline());
@@ -435,40 +435,35 @@ export default function App() {
   const isBusy = captureState === "streaming" || captureState === "transcribing";
   const inputDisabled = isBusy;
 
-  if (windowMode === "notes") {
-    return (
-      <div className="h-screen w-screen bg-transparent">
-        <Suspense fallback={<LazyFallback />}>
-          <NotesPill
-            recording={captureState === "listening"}
-            onStop={stopNotes}
-            onOpenChat={() => setWindowMode("expanded")}
-          />
-        </Suspense>
-      </div>
-    );
-  }
-
-  if (windowMode === "compact") {
-    return (
-      <div className="h-screen w-screen bg-transparent">
-        <Suspense fallback={<LazyFallback />}>
-          <CompactLauncher
-            onCapture={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
-            onOpenChat={() => setWindowMode("expanded")}
-            modKey={modKey}
-          />
-        </Suspense>
-      </div>
-    );
-  }
-
   return (
     <div className="h-screen w-screen bg-transparent">
-      <motion.div
-        layoutId="alma-shell"
-        className="surface-card relative flex h-full w-full flex-col overflow-hidden rounded-sm"
-      >
+      <AnimatePresence mode="popLayout" initial={false}>
+        {windowMode === "notes" ? (
+          <Suspense key="notes" fallback={<LazyFallback />}>
+            <NotesPill
+              recording={captureState === "listening"}
+              onStop={stopNotes}
+              onOpenChat={() => setWindowMode("expanded")}
+            />
+          </Suspense>
+        ) : windowMode === "compact" ? (
+          <Suspense key="compact" fallback={<LazyFallback />}>
+            <CompactLauncher
+              onCapture={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
+              onOpenChat={() => setWindowMode("expanded")}
+              modKey={modKey}
+            />
+          </Suspense>
+        ) : (
+          <motion.div
+            key="expanded"
+            layoutId="alma-shell"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ type: "spring", stiffness: 340, damping: 32 }}
+            className="surface-card relative flex h-full w-full flex-col overflow-hidden rounded-sm"
+          >
         <header
           data-drag-region="true"
           className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-hairline px-4 py-3"
@@ -600,7 +595,9 @@ export default function App() {
 
           </div>
         </div>
-      </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
