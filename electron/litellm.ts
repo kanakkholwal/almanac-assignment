@@ -1,3 +1,4 @@
+import { app } from "electron";
 import { z } from "zod";
 
 import type {
@@ -13,26 +14,62 @@ import { extractContentDelta } from "../shared/sse";
 import { getApiKey, getBaseUrl, getDefaults, hasApiKey } from "./config";
 import { logger, serializeError } from "./logger";
 
-const CHAT_REQUEST_TIMEOUT_MS = 60_000;
+const CHAT_CONNECT_TIMEOUT_MS = 20_000;
 const CHAT_IDLE_TIMEOUT_MS = 30_000;
 const TRANSCRIBE_TIMEOUT_MS = 60_000;
 const SPEECH_TIMEOUT_MS = 30_000;
 const MODELS_TIMEOUT_MS = 10_000;
 const MODELS_CACHE_TTL_MS = 5 * 60_000;
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+const RETRY_BASE_MS = 500;
+const RETRY_MAX_MS = 10_000;
+const RETRY_AFTER_CAP_MS = 30_000;
+
+const USER_AGENT = `Almanac/${app.getVersion?.() ?? "0.0.0"} (${process.platform})`;
 
 export class LiteLLMError extends Error {
   readonly status: number;
   readonly code: string;
   readonly retriable: boolean;
+  readonly requestId?: string;
 
-  constructor(message: string, status = 0, code = "UNKNOWN", retriable = false) {
+  constructor(
+    message: string,
+    status = 0,
+    code = "UNKNOWN",
+    retriable = false,
+    requestId?: string,
+  ) {
     super(message);
     this.name = "LiteLLMError";
     this.status = status;
     this.code = code;
     this.retriable = retriable;
+    this.requestId = requestId;
   }
+}
+
+function parseRetryAfter(header: string | null): number | null {
+  if (!header) return null;
+  const trimmed = header.trim();
+  if (!trimmed) return null;
+  // Numeric seconds form
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.min(seconds * 1000, RETRY_AFTER_CAP_MS);
+  }
+  // HTTP-date form
+  const date = Date.parse(trimmed);
+  if (!Number.isNaN(date)) {
+    const delta = date - Date.now();
+    if (delta > 0) return Math.min(delta, RETRY_AFTER_CAP_MS);
+  }
+  return null;
+}
+
+function computeBackoff(attempt: number): number {
+  const exp = Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS);
+  return exp + Math.floor(Math.random() * RETRY_BASE_MS);
 }
 
 function endpoint(path: string): string {
@@ -47,24 +84,48 @@ function buildHeaders(extra?: Record<string, string>): Record<string, string> {
       "MISSING_API_KEY",
     );
   }
-  return { Authorization: `Bearer ${getApiKey()}`, ...(extra ?? {}) };
+  return {
+    Authorization: `Bearer ${getApiKey()}`,
+    "User-Agent": USER_AGENT,
+    "X-Stainless-Lang": "node",
+    ...(extra ?? {}),
+  };
 }
 
 function isRetriableStatus(status: number): boolean {
   return status === 408 || status === 425 || status === 429 || (status >= 500 && status < 600);
 }
 
-async function readErrorBody(response: Response): Promise<string> {
+interface ApiErrorDetail {
+  message: string;
+  code: string;
+}
+
+async function readErrorDetail(response: Response): Promise<ApiErrorDetail> {
   try {
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
-      const body = (await response.json()) as { error?: { message?: string } } | string;
-      if (typeof body === "string") return body;
-      return body?.error?.message ?? JSON.stringify(body).slice(0, 500);
+      const body = (await response.json()) as
+        | { error?: { message?: string; code?: string; type?: string } }
+        | { message?: string; code?: string }
+        | string;
+      if (typeof body === "string") {
+        return { message: body.slice(0, 800), code: "HTTP_ERROR" };
+      }
+      const err = (body as { error?: { message?: string; code?: string; type?: string } }).error;
+      if (err?.message) {
+        return { message: err.message, code: err.code ?? err.type ?? "HTTP_ERROR" };
+      }
+      const flat = body as { message?: string; code?: string };
+      if (flat.message) {
+        return { message: flat.message, code: flat.code ?? "HTTP_ERROR" };
+      }
+      return { message: JSON.stringify(body).slice(0, 500), code: "HTTP_ERROR" };
     }
-    return (await response.text()).slice(0, 500);
+    const text = (await response.text()).slice(0, 500);
+    return { message: text, code: "HTTP_ERROR" };
   } catch {
-    return "";
+    return { message: `${response.status} ${response.statusText}`, code: "HTTP_ERROR" };
   }
 }
 
@@ -82,17 +143,23 @@ async function requestWithRetry(url: string, init: FetchOptions): Promise<Respon
   const {
     timeoutMs = 30_000,
     retries = 0,
-    retryBaseMs = 500,
     signal: userSignal,
     ...rest
   } = init;
 
   let attempt = 0;
   let lastError: unknown;
+  let nextDelayMs = 0;
 
   while (attempt <= retries) {
+    if (nextDelayMs > 0) await sleep(nextDelayMs);
+    nextDelayMs = 0;
+
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(new DOMException("timeout", "AbortError")), timeoutMs);
+    const timer = setTimeout(
+      () => controller.abort(new DOMException("timeout", "AbortError")),
+      timeoutMs,
+    );
 
     const onUserAbort = () => controller.abort(userSignal?.reason);
     if (userSignal) {
@@ -107,15 +174,32 @@ async function requestWithRetry(url: string, init: FetchOptions): Promise<Respon
       const response = await fetch(url, { ...rest, signal: controller.signal });
       if (response.ok) return response;
 
-      if (!isRetriableStatus(response.status) || attempt === retries) {
-        const detail = await readErrorBody(response);
+      const requestId = response.headers.get("x-request-id") ?? undefined;
+      const retriable = isRetriableStatus(response.status);
+
+      if (!retriable || attempt === retries) {
+        const detail = await readErrorDetail(response);
         throw new LiteLLMError(
-          detail || `Request failed (${response.status} ${response.statusText})`,
+          detail.message || `Request failed (${response.status} ${response.statusText})`,
           response.status,
-          "HTTP_ERROR",
-          isRetriableStatus(response.status),
+          detail.code,
+          retriable,
+          requestId,
         );
       }
+
+      // Drain the body so the connection can be reused, then schedule the retry
+      // honoring Retry-After when the server hinted one.
+      void response.body?.cancel().catch(() => undefined);
+      const hinted = parseRetryAfter(response.headers.get("retry-after"));
+      nextDelayMs = hinted ?? computeBackoff(attempt);
+      lastError = new LiteLLMError(
+        `Transient ${response.status} from upstream`,
+        response.status,
+        "TRANSIENT",
+        true,
+        requestId,
+      );
     } catch (error) {
       lastError = error;
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -125,8 +209,10 @@ async function requestWithRetry(url: string, init: FetchOptions): Promise<Respon
         if (attempt === retries) {
           throw new LiteLLMError("Request timed out", 408, "TIMEOUT", true);
         }
+        nextDelayMs = computeBackoff(attempt);
       } else if (error instanceof LiteLLMError) {
         if (!error.retriable || attempt === retries) throw error;
+        nextDelayMs = computeBackoff(attempt);
       } else if (attempt === retries) {
         throw new LiteLLMError(
           error instanceof Error ? error.message : "Network error",
@@ -134,6 +220,8 @@ async function requestWithRetry(url: string, init: FetchOptions): Promise<Respon
           "NETWORK",
           true,
         );
+      } else {
+        nextDelayMs = computeBackoff(attempt);
       }
     } finally {
       clearTimeout(timer);
@@ -141,7 +229,6 @@ async function requestWithRetry(url: string, init: FetchOptions): Promise<Respon
     }
 
     attempt += 1;
-    await sleep(retryBaseMs * 2 ** (attempt - 1));
   }
 
   throw lastError instanceof Error ? lastError : new LiteLLMError("Request failed", 0, "UNKNOWN");
@@ -243,21 +330,18 @@ export async function streamChatCompletion(
   try {
     resetIdleTimer();
 
-    const response = await fetch(endpoint("/v1/chat/completions"), {
+    // Use requestWithRetry for the connection phase so we recover from transient
+    // upstream blips before any tokens have streamed. Once data starts flowing
+    // we cannot safely retry (a partial response is not idempotent).
+    const response = await requestWithRetry(endpoint("/v1/chat/completions"), {
       method: "POST",
       headers: buildHeaders({ "Content-Type": "application/json", Accept: "text/event-stream" }),
       body: JSON.stringify(body),
+      timeoutMs: CHAT_CONNECT_TIMEOUT_MS,
+      retries: 2,
       signal: controller.signal,
     });
 
-    if (!response.ok) {
-      const detail = await readErrorBody(response);
-      throw new LiteLLMError(
-        detail || `Chat request failed (${response.status})`,
-        response.status,
-        "HTTP_ERROR",
-      );
-    }
     if (!response.body) {
       throw new LiteLLMError("Streaming response has no body", 500, "NO_BODY");
     }
@@ -376,7 +460,7 @@ export async function transcribeAudio(
     headers: buildHeaders(),
     body: form,
     timeoutMs: TRANSCRIBE_TIMEOUT_MS,
-    retries: 2,
+    retries: 1,
   });
 
   const data = transcriptionResponseSchema.parse(await response.json());
@@ -411,7 +495,7 @@ export async function synthesizeSpeech(
       response_format: format,
     }),
     timeoutMs: SPEECH_TIMEOUT_MS,
-    retries: 2,
+    retries: 1,
   });
 
   const buffer = await response.arrayBuffer();

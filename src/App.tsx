@@ -20,6 +20,7 @@ import {
   MonitorUp,
   Pin,
   SendHorizonal,
+  Square,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -71,6 +72,18 @@ const defaultModels = {
   transcribe: import.meta.env.VITE_DEFAULT_TRANSCRIBE_MODEL || "gpt-4o-mini-transcribe",
   speech: import.meta.env.VITE_DEFAULT_TTS_MODEL || "gpt-4o-mini-tts",
 };
+
+const DEMO_MODE = import.meta.env.VITE_ENABLE_DEMO === "true";
+
+function pickChatModel(
+  available: ModelOption[],
+  configuredDefault: string | undefined,
+): string {
+  const preferred = configuredDefault ?? defaultModels.chat;
+  if (available.some((m) => m.id === preferred)) return preferred;
+  const fallback = available.find((m) => /gpt-4o|gpt-4|claude|llama/i.test(m.id));
+  return fallback?.id ?? available[0]?.id ?? preferred;
+}
 
 function buildTimelineMessage(
   role: AssistantMessage["role"],
@@ -184,6 +197,7 @@ export default function App() {
   const timelineRef = useRef<TimelineItem[]>(timeline);
   const speechEnabledRef = useRef(false);
   const hasBootstrappedRef = useRef(false);
+  const streamingMessageIdRef = useRef<string | null>(null);
   const deferredTimeline = useDeferredValue(timeline);
 
   useEffect(() => {
@@ -221,14 +235,28 @@ export default function App() {
     void Promise.all([
       almanac.getRuntimeInfo(),
       almanac.getWindowState(),
-      almanac.fetchModels().catch(() => [] as ModelOption[]),
+      almanac.fetchModels().then(
+        (m) => ({ ok: true, models: m }) as const,
+        (err: unknown) => ({ ok: false, error: err }) as const,
+      ),
     ])
-      .then(([runtime, state, available]) => {
+      .then(([runtime, state, modelsResult]) => {
         if (!active) return;
         setRuntimeInfo(runtime);
         setWindowMode(state.mode);
         setAlwaysOnTop(state.alwaysOnTop);
-        setModels(available);
+        if (modelsResult.ok) {
+          setModels(modelsResult.models);
+        } else {
+          setModels([]);
+          if (runtime.config.apiKeyPresent) {
+            setRuntimeWarning(
+              modelsResult.error instanceof Error
+                ? `LiteLLM unreachable: ${modelsResult.error.message}`
+                : "LiteLLM is unreachable. Check your network or API key.",
+            );
+          }
+        }
         hasBootstrappedRef.current = true;
       })
       .catch((fetchError) => {
@@ -242,6 +270,7 @@ export default function App() {
     const unsubscribeStream = almanac.onAssistantStream(async (payload) => {
       if (payload.error) {
         setCaptureState("idle");
+        streamingMessageIdRef.current = null;
         setError(payload.error);
         return;
       }
@@ -264,6 +293,7 @@ export default function App() {
 
       if (payload.done) {
         setCaptureState("idle");
+        streamingMessageIdRef.current = null;
         if (speechEnabledRef.current) {
           const finished = timelineRef.current.find(
             (item) => item.kind === "message" && item.message.id === payload.messageId,
@@ -347,10 +377,12 @@ export default function App() {
       appendTimeline([userItem]);
       setInput("");
 
-      const mocked = matchMeetingWorkflow(trimmed);
-      if (mocked) {
-        window.setTimeout(() => appendTimeline(mocked), 280);
-        return;
+      if (DEMO_MODE) {
+        const mocked = matchMeetingWorkflow(trimmed);
+        if (mocked) {
+          window.setTimeout(() => appendTimeline(mocked), 280);
+          return;
+        }
       }
 
       const assistantId = createId("assistant");
@@ -361,11 +393,12 @@ export default function App() {
 
       appendTimeline([placeholder]);
       setCaptureState("streaming");
+      streamingMessageIdRef.current = assistantId;
 
       try {
         await window.almanac.startChatCompletion({
           messageId: assistantId,
-          model: models[0]?.id || defaultModels.chat,
+          model: pickChatModel(models, runtimeInfo?.config.defaultChatModel),
           messages: [
             {
               role: "system",
@@ -378,11 +411,20 @@ export default function App() {
         });
       } catch (streamError) {
         setCaptureState("idle");
+        streamingMessageIdRef.current = null;
         setError(streamError instanceof Error ? streamError.message : "Unable to start chat");
       }
     },
-    [appendTimeline, messageHistory, models],
+    [appendTimeline, messageHistory, models, runtimeInfo],
   );
+
+  const cancelStreaming = useCallback(() => {
+    const id = streamingMessageIdRef.current;
+    if (!id) return;
+    void window.almanac?.cancelChatCompletion(id);
+    streamingMessageIdRef.current = null;
+    setCaptureState("idle");
+  }, []);
 
   const recorder = usePushToTalk(async ({ blob, mimeType }) => {
     setCaptureState("transcribing");
@@ -593,9 +635,11 @@ export default function App() {
               recording={recorder.isRecording}
               busy={isBusy}
               busyState={captureState}
+              streaming={captureState === "streaming"}
               onChange={setInput}
               onSubmit={() => void sendMessage(input)}
               onToggleRecord={() => void toggleRecording()}
+              onCancelStream={cancelStreaming}
             />
 
           </div>
@@ -616,12 +660,24 @@ const Composer = memo(
       recording: boolean;
       busy: boolean;
       busyState: CaptureState;
+      streaming: boolean;
       onChange: (v: string) => void;
       onSubmit: () => void;
       onToggleRecord: () => void;
+      onCancelStream: () => void;
     }) {
-      const { value, disabled, recording, busy, busyState, onChange, onSubmit, onToggleRecord } =
-        props;
+      const {
+        value,
+        disabled,
+        recording,
+        busy,
+        busyState,
+        streaming,
+        onChange,
+        onSubmit,
+        onToggleRecord,
+        onCancelStream,
+      } = props;
       const canSend = Boolean(value.trim()) && !busy;
       return (
         <div
@@ -666,15 +722,27 @@ const Composer = memo(
               <Mic />
             )}
           </Button>
-          <Button
-            aria-label="Send message"
-            disabled={!canSend}
-            onClick={onSubmit}
-            size="icon"
-            variant={canSend ? "primary" : "outline"}
-          >
-            <SendHorizonal />
-          </Button>
+          {streaming ? (
+            <Button
+              aria-label="Stop generating"
+              onClick={onCancelStream}
+              size="icon"
+              variant="outline"
+              title="Stop"
+            >
+              <Square className="size-3.5 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              aria-label="Send message"
+              disabled={!canSend}
+              onClick={onSubmit}
+              size="icon"
+              variant={canSend ? "primary" : "outline"}
+            >
+              <SendHorizonal />
+            </Button>
+          )}
         </div>
       );
     },
