@@ -16,9 +16,13 @@ export const IPC_CHANNELS = {
   mockEvent: "meeting:mock-event",
   assistantStream: "assistant:stream",
   appEvent: "app:event",
+  notificationShow: "notification:show",
+  notificationStartNotes: "notification:start-notes",
+  notificationDismiss: "notification:dismiss",
+  notificationData: "notification:data",
 } as const;
 
-export const windowModeSchema = z.enum(["compact", "expanded"]);
+export const windowModeSchema = z.enum(["compact", "notes", "expanded"]);
 export type WindowMode = z.infer<typeof windowModeSchema>;
 
 export const modelOptionSchema = z.object({

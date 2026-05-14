@@ -42,11 +42,15 @@ import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePushToTalk } from "@/hooks/usePushToTalk";
 import {
-  getInitialNotification,
   matchMeetingWorkflow,
   startNotesTimeline,
-  type MeetingNotification,
 } from "@/lib/mockMeetingAdapter";
+
+const NOTIFICATION_PAYLOAD = {
+  title: "Start Alma Notes",
+  description: "Take notes & get suggestions in real time",
+  actionLabel: "Take Notes",
+};
 import { cn, createId, formatClock, normalizePrompt } from "@/lib/utils";
 
 const CompactLauncher = lazy(async () =>
@@ -57,8 +61,8 @@ const CompactLauncher = lazy(async () =>
 const Transcript = lazy(async () =>
   import("@/features/assistant/Transcript").then((m) => ({ default: m.Transcript })),
 );
-const MeetingPrompt = lazy(async () =>
-  import("@/features/meeting/MeetingPrompt").then((m) => ({ default: m.MeetingPrompt })),
+const NotesPill = lazy(async () =>
+  import("@/features/notes/NotesPill").then((m) => ({ default: m.NotesPill })),
 );
 
 const STORAGE_KEY = "almanac.timeline.v1";
@@ -185,7 +189,6 @@ export default function App() {
   const [input, setInput] = useState("");
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [models, setModels] = useState<ModelOption[]>([]);
-  const [notification, setNotification] = useState<MeetingNotification | null>(null);
   const [speechEnabled, setSpeechEnabled] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -204,11 +207,7 @@ export default function App() {
 
   useEffect(() => {
     const timer = window.setInterval(() => setCurrentTime(formatClock()), 30_000);
-    const promptTimer = window.setTimeout(() => setNotification(getInitialNotification()), 1400);
-    return () => {
-      window.clearInterval(timer);
-      window.clearTimeout(promptTimer);
-    };
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -342,10 +341,20 @@ export default function App() {
   }, []);
 
   const startNotes = useCallback(() => {
-    setNotification(null);
     setCaptureState("listening");
+    setWindowMode("notes");
     appendTimeline(startNotesTimeline());
   }, [appendTimeline]);
+
+  const stopNotes = useCallback(() => {
+    setCaptureState("idle");
+    setWindowMode("compact");
+  }, []);
+
+  useEffect(() => {
+    const off = window.almanac?.onNotificationStartNotes?.(() => startNotes());
+    return () => off?.();
+  }, [startNotes]);
 
   const sendMessage = useCallback(
     async (raw: string) => {
@@ -444,15 +453,26 @@ export default function App() {
   const isBusy = captureState === "streaming" || captureState === "transcribing";
   const inputDisabled = isBusy;
 
+  if (windowMode === "notes") {
+    return (
+      <div className="h-screen w-screen bg-transparent">
+        <Suspense fallback={<LazyFallback />}>
+          <NotesPill
+            recording={captureState === "listening"}
+            onStop={stopNotes}
+            onOpenChat={() => setWindowMode("expanded")}
+          />
+        </Suspense>
+      </div>
+    );
+  }
+
   if (windowMode === "compact") {
     return (
       <div className="h-screen w-screen bg-transparent">
         <Suspense fallback={<LazyFallback />}>
           <CompactLauncher
-            onCapture={() => {
-              setNotification(getInitialNotification());
-              setWindowMode("expanded");
-            }}
+            onCapture={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
             onOpenChat={() => setWindowMode("expanded")}
             modKey={modKey}
           />
@@ -467,14 +487,6 @@ export default function App() {
         layoutId="alma-shell"
         className="glass-panel relative flex h-full w-full flex-col overflow-hidden rounded-2xl"
       >
-        <Suspense fallback={null}>
-          <MeetingPrompt
-            onDismiss={() => setNotification(null)}
-            onStart={startNotes}
-            prompt={notification}
-          />
-        </Suspense>
-
         <header
           data-drag-region="true"
           className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border/60 px-4 py-2.5"
@@ -491,7 +503,7 @@ export default function App() {
             <ShortcutAction
               label="Capture"
               keys={[modKey, "S"]}
-              onClick={() => setNotification(getInitialNotification())}
+              onClick={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
             />
           </div>
 
@@ -508,7 +520,7 @@ export default function App() {
             </Button>
             <Button
               aria-label="Capture screen"
-              onClick={() => setNotification(getInitialNotification())}
+              onClick={() => void window.almanac?.showNotification(NOTIFICATION_PAYLOAD)}
               size="icon-sm"
               variant="ghost"
               title="Capture screen"

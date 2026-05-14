@@ -31,7 +31,7 @@ export function CompactLauncher({
   const tools: ToolAction[] = [
     { label: "Voice output", icon: Headphones, onClick: onCapture },
     { label: "Capture screen", icon: MonitorUp, onClick: onCapture },
-    { label: "Settings", icon: Settings, onClick: onOpenChat },
+    { label: "Settings", icon: Settings, onClick: () => {} },
     { label: "Expand", icon: Maximize2, onClick: onOpenChat },
   ];
 
@@ -42,7 +42,7 @@ export function CompactLauncher({
       initial={{ opacity: 0, y: 4, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ type: "spring", stiffness: 380, damping: 30 }}
-      className="glass-panel flex h-full w-full flex-col gap-1.5 rounded-2xl p-2"
+      className="glass-panel flex h-full w-full flex-col gap-1 rounded-2xl p-1.5"
     >
       <ShortcutRow
         icon={MessageSquareText}
@@ -57,7 +57,7 @@ export function CompactLauncher({
         onClick={onCapture}
       />
 
-      <div className="mt-1 flex items-center justify-between gap-1 border-t border-border pt-1.5">
+      <div className="mt-auto flex items-center justify-between gap-1 border-t border-border pt-1">
         {tools.map(({ label, icon: Icon, onClick }) => (
           <Button
             key={label}
@@ -92,8 +92,8 @@ function ShortcutRow({
       data-no-drag="true"
       onClick={onClick}
       className={[
-        "group flex items-center justify-between gap-3 rounded-lg px-2.5 py-1.5 text-left",
-        "transition-colors hover:bg-white/[0.05]",
+        "group flex items-center justify-between gap-3 rounded-md px-2 py-1 text-left",
+        "transition-colors hover:bg-white/5",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       ].join(" ")}
     >

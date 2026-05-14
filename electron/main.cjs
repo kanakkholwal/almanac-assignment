@@ -22,17 +22,27 @@ const IPC_CHANNELS = {
   mockEvent: "meeting:mock-event",
   assistantStream: "assistant:stream",
   appEvent: "app:event",
+  notificationShow: "notification:show",
+  notificationStartNotes: "notification:start-notes",
+  notificationDismiss: "notification:dismiss",
+  notificationData: "notification:data",
 };
+
+const NOTIFICATION_SIZE = { width: 540, height: 200 };
+let notificationWindow = null;
 
 const DEFAULT_MODE = "compact";
 const DEFAULT_MODE_SIZES = {
-  compact: { width: 240, height: 200 },
+  compact: { width: 228, height: 152 },
+  notes: { width: 96, height: 232 },
   expanded: { width: 760, height: 620 },
 };
 
+const VALID_MODES = new Set(["compact", "notes", "expanded"]);
+
 function getInitialPosition(mode, size) {
   const workArea = screen.getPrimaryDisplay().workArea;
-  if (mode === "compact") {
+  if (mode === "compact" || mode === "notes") {
     return {
       x: workArea.x + Math.round((workArea.width - size.width) / 2),
       y: workArea.y + 16,
@@ -206,8 +216,81 @@ function createMainWindow() {
   return mainWindow;
 }
 
+function resolveNotificationUrl() {
+  const base = resolveRendererUrl();
+  const separator = base.includes("#") ? "&" : "#";
+  return `${base}${separator}notification`;
+}
+
+function createNotificationWindow(payload) {
+  if (notificationWindow && !notificationWindow.isDestroyed()) {
+    notificationWindow.webContents.send(IPC_CHANNELS.notificationData, payload);
+    notificationWindow.showInactive();
+    return;
+  }
+
+  const workArea = screen.getPrimaryDisplay().workArea;
+  const x = workArea.x + Math.round((workArea.width - NOTIFICATION_SIZE.width) / 2);
+  const y = workArea.y + 16;
+
+  const isWin = process.platform === "win32";
+  notificationWindow = new BrowserWindow({
+    width: NOTIFICATION_SIZE.width,
+    height: NOTIFICATION_SIZE.height,
+    x,
+    y,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    hasShadow: false,
+    roundedCorners: false,
+    skipTaskbar: true,
+    focusable: true,
+    alwaysOnTop: true,
+    ...(isWin ? { backgroundMaterial: "none" } : {}),
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      additionalArguments: ["--almanac-view=notification"],
+    },
+  });
+
+  if (isWin && typeof notificationWindow.setBackgroundColor === "function") {
+    notificationWindow.setBackgroundColor("#00000000");
+  }
+
+  notificationWindow.setAlwaysOnTop(true, "screen-saver");
+  notificationWindow.loadURL(resolveNotificationUrl());
+
+  notificationWindow.webContents.once("did-finish-load", () => {
+    notificationWindow?.webContents.send(IPC_CHANNELS.notificationData, payload);
+  });
+
+  notificationWindow.once("ready-to-show", () => {
+    notificationWindow?.showInactive();
+  });
+
+  notificationWindow.on("closed", () => {
+    notificationWindow = null;
+  });
+}
+
+function closeNotificationWindow() {
+  if (notificationWindow && !notificationWindow.isDestroyed()) {
+    notificationWindow.close();
+  }
+  notificationWindow = null;
+}
+
 function setWindowMode(mode) {
-  windowMode = mode === "compact" ? "compact" : "expanded";
+  windowMode = VALID_MODES.has(mode) ? mode : "expanded";
 
   if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMaximized()) {
     syncWindowState();
@@ -215,9 +298,9 @@ function setWindowMode(mode) {
   }
 
   const size = DEFAULT_MODE_SIZES[windowMode];
-  const isCompact = windowMode === "compact";
-  const target = isCompact
-    ? { ...getInitialPosition("compact", size), width: size.width, height: size.height }
+  const isFloating = windowMode === "compact" || windowMode === "notes";
+  const target = isFloating
+    ? { ...getInitialPosition(windowMode, size), width: size.width, height: size.height }
     : (() => {
         const b = mainWindow.getBounds();
         const workArea = screen.getPrimaryDisplay().workArea;
@@ -226,9 +309,9 @@ function setWindowMode(mode) {
         return { x: Math.max(workArea.x + 12, x), y: Math.max(workArea.y + 12, y), width: size.width, height: size.height };
       })();
 
-  mainWindow.setResizable(!isCompact);
-  mainWindow.setMaximizable(!isCompact);
-  mainWindow.setSkipTaskbar(isCompact);
+  mainWindow.setResizable(!isFloating);
+  mainWindow.setMaximizable(!isFloating);
+  mainWindow.setSkipTaskbar(isFloating);
   animateBounds(mainWindow, target);
   syncWindowState();
 }
@@ -302,11 +385,36 @@ function registerIpc() {
 
     mainWindow.webContents.send(IPC_CHANNELS.mockEvent, payload);
   });
+
+  ipcMain.handle(IPC_CHANNELS.notificationShow, async (_event, payload) => {
+    createNotificationWindow(payload || null);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.notificationStartNotes, async () => {
+    closeNotificationWindow();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC_CHANNELS.notificationStartNotes);
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.notificationDismiss, async () => {
+    closeNotificationWindow();
+  });
 }
 
 app.whenReady().then(() => {
   registerIpc();
   createMainWindow();
+
+  setTimeout(() => {
+    createNotificationWindow({
+      title: "Start Alma Notes",
+      description: "Take notes & get suggestions in real time",
+      actionLabel: "Take Notes",
+    });
+  }, 1400);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

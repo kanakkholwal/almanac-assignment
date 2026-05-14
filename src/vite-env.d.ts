@@ -12,9 +12,16 @@ import type {
   WindowState,
 } from "@shared/ipc";
 
+export interface NotificationPayload {
+  title: string;
+  description: string;
+  actionLabel: string;
+}
+
 declare global {
   interface Window {
     almanac: {
+      view: "main" | "notification";
       toggleWindow: () => Promise<void>;
       setWindowMode: (mode: WindowMode) => Promise<void>;
       setAlwaysOnTop: (enabled: boolean) => Promise<void>;
@@ -32,8 +39,13 @@ declare global {
       ) => Promise<string>;
       synthesizeSpeech: (input: string, model: string) => Promise<SpeechPayload>;
       triggerMockEvent: (event: MockMeetingEvent) => Promise<void>;
+      showNotification: (payload: NotificationPayload) => Promise<void>;
+      notificationStartNotes: () => Promise<void>;
+      notificationDismiss: () => Promise<void>;
       onAssistantStream: (listener: (payload: StreamEventPayload) => void) => () => void;
       onAppEvent: (listener: (payload: AppEvent) => void) => () => void;
+      onNotificationData: (listener: (payload: NotificationPayload) => void) => () => void;
+      onNotificationStartNotes: (listener: () => void) => () => void;
     };
   }
 }

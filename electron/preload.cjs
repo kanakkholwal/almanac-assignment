@@ -16,15 +16,22 @@ const IPC_CHANNELS = {
   mockEvent: "meeting:mock-event",
   assistantStream: "assistant:stream",
   appEvent: "app:event",
+  notificationShow: "notification:show",
+  notificationStartNotes: "notification:start-notes",
+  notificationDismiss: "notification:dismiss",
+  notificationData: "notification:data",
 };
 
 function invoke(channel, ...args) {
   return ipcRenderer.invoke(channel, ...args);
 }
 
+const view = process.argv.find((arg) => arg.startsWith("--almanac-view="))?.split("=")[1] ?? "main";
+
 contextBridge.exposeInMainWorld(
   "almanac",
   Object.freeze({
+    view,
     toggleWindow: () => invoke(IPC_CHANNELS.windowToggle),
     setWindowMode: (mode) => invoke(IPC_CHANNELS.windowMode, mode),
     setAlwaysOnTop: (enabled) => invoke(IPC_CHANNELS.windowAlwaysOnTop, Boolean(enabled)),
@@ -39,6 +46,9 @@ contextBridge.exposeInMainWorld(
       invoke(IPC_CHANNELS.transcribeAudio, audio, mimeType, model),
     synthesizeSpeech: (input, model) => invoke(IPC_CHANNELS.speechSynthesize, input, model),
     triggerMockEvent: (event) => invoke(IPC_CHANNELS.mockEvent, event),
+    showNotification: (payload) => invoke(IPC_CHANNELS.notificationShow, payload),
+    notificationStartNotes: () => invoke(IPC_CHANNELS.notificationStartNotes),
+    notificationDismiss: () => invoke(IPC_CHANNELS.notificationDismiss),
     onAssistantStream: (listener) => {
       const handler = (_event, payload) => listener(payload);
       ipcRenderer.on(IPC_CHANNELS.assistantStream, handler);
@@ -48,6 +58,16 @@ contextBridge.exposeInMainWorld(
       const handler = (_event, payload) => listener(payload);
       ipcRenderer.on(IPC_CHANNELS.appEvent, handler);
       return () => ipcRenderer.removeListener(IPC_CHANNELS.appEvent, handler);
+    },
+    onNotificationData: (listener) => {
+      const handler = (_event, payload) => listener(payload);
+      ipcRenderer.on(IPC_CHANNELS.notificationData, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.notificationData, handler);
+    },
+    onNotificationStartNotes: (listener) => {
+      const handler = () => listener();
+      ipcRenderer.on(IPC_CHANNELS.notificationStartNotes, handler);
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.notificationStartNotes, handler);
     },
   }),
 );

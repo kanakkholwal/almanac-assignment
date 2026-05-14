@@ -10,7 +10,8 @@ const require = createRequire(import.meta.url);
 const { BrowserWindow, nativeImage, screen } = require("electron/main") as typeof import("electron");
 
 const WINDOW_SIZES: Record<WindowMode, { width: number; height: number }> = {
-  compact: { width: 240, height: 200 },
+  compact: { width: 228, height: 152 },
+  notes: { width: 96, height: 232 },
   expanded: { width: 760, height: 620 },
 };
 
@@ -19,7 +20,7 @@ function getInitialPosition(
   size: { width: number; height: number },
   workArea: { x: number; y: number; width: number; height: number },
 ) {
-  if (mode === "compact") {
+  if (mode === "compact" || mode === "notes") {
     return {
       x: workArea.x + Math.round((workArea.width - size.width) / 2),
       y: workArea.y + 16,
@@ -122,20 +123,20 @@ export function applyWindowMode(win: BrowserWindowType, mode: WindowMode) {
   const workArea = screen.getPrimaryDisplay().workArea;
   const bounds = win.getBounds();
 
-  const next =
-    mode === "compact"
-      ? {
-          ...getInitialPosition("compact", size, workArea),
-          width: size.width,
-          height: size.height,
-        }
-      : { x: bounds.x, y: bounds.y, width: size.width, height: size.height };
+  const isFloating = mode === "compact" || mode === "notes";
+  const next = isFloating
+    ? {
+        ...getInitialPosition(mode, size, workArea),
+        width: size.width,
+        height: size.height,
+      }
+    : { x: bounds.x, y: bounds.y, width: size.width, height: size.height };
 
   win.setBounds(next);
-  win.setMinimumSize(WINDOW_SIZES.compact.width, WINDOW_SIZES.compact.height);
-  win.setResizable(mode === "expanded");
-  win.setMaximizable(mode === "expanded");
-  win.setSkipTaskbar(mode === "compact");
+  win.setMinimumSize(WINDOW_SIZES.notes.width, WINDOW_SIZES.notes.height);
+  win.setResizable(!isFloating);
+  win.setMaximizable(!isFloating);
+  win.setSkipTaskbar(isFloating);
 }
 
 export function getWindowState(

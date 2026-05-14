@@ -1,61 +1,153 @@
+import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Sparkles, X } from "lucide-react";
+import { ChevronUp, X } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import type { MeetingNotification } from "@/lib/mockMeetingAdapter";
+import { AlmaAvatar } from "@/components/AlmaAvatar";
+import { cn } from "@/lib/utils";
+
+interface PromptPayload {
+  title: string;
+  description: string;
+  actionLabel: string;
+}
 
 interface MeetingPromptProps {
-  prompt: MeetingNotification | null;
+  prompt: PromptPayload | null;
   onStart: () => void;
   onDismiss: () => void;
 }
 
 export function MeetingPrompt({ prompt, onStart, onDismiss }: MeetingPromptProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+
   return (
     <AnimatePresence>
       {prompt ? (
         <motion.div
           role="dialog"
           aria-label={prompt.title}
-          initial={{ opacity: 0, y: -16, scale: 0.97 }}
+          initial={{ opacity: 0, y: -12, scale: 0.97 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -8, scale: 0.97 }}
           transition={{ type: "spring", stiffness: 380, damping: 30 }}
-          className="glass-panel absolute right-4 top-4 z-20 w-[280px] overflow-hidden rounded-xl"
+          className="absolute left-1/2 top-4 z-20 -translate-x-1/2"
         >
-          <div className="flex items-start gap-3 p-3.5">
-            <span
-              aria-hidden
-              className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent ring-1 ring-inset ring-accent/25"
-            >
-              <Sparkles className="size-3.5" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold leading-snug tracking-tight text-foreground">
-                {prompt.title}
+          <button
+            aria-label="Dismiss notification"
+            onClick={() => {
+              setMenuOpen(false);
+              onDismiss();
+            }}
+            className={cn(
+              "absolute -left-2.5 -top-2.5 z-10 flex size-6 items-center justify-center rounded-full",
+              "border border-border bg-card text-muted-foreground shadow-md",
+              "transition-colors hover:bg-muted hover:text-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            <X className="size-3" />
+          </button>
+
+          <div
+            className={cn(
+              "relative w-130 max-w-[calc(100vw-32px)] overflow-hidden rounded-2xl border border-border",
+              "bg-card shadow-elevated",
+            )}
+            style={{
+              backgroundImage:
+                "radial-gradient(120% 100% at 80% 100%, oklch(0.55 0.18 280 / 0.22), transparent 60%)",
+            }}
+          >
+            <div className="flex items-center gap-3 px-3 py-3">
+              <AlmaAvatar size={40} />
+              <div className="min-w-0 flex-1">
+                <div className="text-[14px] font-semibold leading-tight tracking-tight text-foreground">
+                  {prompt.title}
+                </div>
+                <p className="mt-0.5 text-[12.5px] leading-snug text-muted-foreground">
+                  {prompt.description}
+                </p>
               </div>
-              <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
-                {prompt.description}
-              </p>
+
+              <div className="flex items-stretch overflow-hidden rounded-lg border border-border bg-white/4">
+                <button
+                  onClick={onStart}
+                  className={cn(
+                    "px-3 text-[13px] font-medium text-foreground",
+                    "transition-colors hover:bg-white/6",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                  )}
+                >
+                  {prompt.actionLabel}
+                </button>
+                <div className="w-px self-stretch bg-border" />
+                <button
+                  aria-label="More options"
+                  aria-expanded={menuOpen}
+                  onClick={() => setMenuOpen((v) => !v)}
+                  className={cn(
+                    "flex w-7 items-center justify-center text-muted-foreground",
+                    "transition-colors hover:bg-white/6 hover:text-foreground",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                  )}
+                >
+                  <ChevronUp
+                    className={cn("size-3.5 transition-transform", !menuOpen && "rotate-180")}
+                  />
+                </button>
+              </div>
             </div>
-            <button
-              aria-label="Dismiss prompt"
-              onClick={onDismiss}
-              className="-mr-1 -mt-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <X className="size-3.5" />
-            </button>
           </div>
-          <div className="flex items-center justify-end gap-2 border-t border-border bg-black/15 px-3.5 py-2">
-            <Button onClick={onDismiss} size="sm" variant="ghost">
-              Not now
-            </Button>
-            <Button onClick={onStart} size="sm" variant="default">
-              {prompt.actionLabel}
-            </Button>
-          </div>
+
+          <AnimatePresence>
+            {menuOpen ? (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                transition={{ duration: 0.14 }}
+                className={cn(
+                  "absolute right-3 top-[calc(100%+6px)] w-45 overflow-hidden rounded-lg border border-border",
+                  "bg-popover shadow-elevated",
+                )}
+                role="menu"
+              >
+                <MenuItem
+                  label="Open Alma"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDismiss();
+                  }}
+                />
+                <div className="h-px bg-border" />
+                <MenuItem
+                  label="Turn off notifications"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    onDismiss();
+                  }}
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </motion.div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      role="menuitem"
+      onClick={onClick}
+      className={cn(
+        "block w-full px-3 py-2 text-left text-[13px] text-foreground",
+        "transition-colors hover:bg-white/6",
+        "focus-visible:outline-none focus-visible:bg-white/6",
+      )}
+    >
+      {label}
+    </button>
   );
 }
