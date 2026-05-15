@@ -618,6 +618,7 @@ export default function App() {
                 onOpenChat={() => setWindowMode("expanded")}
                 onVoice={() => void startVoice()}
                 onScreenShare={() => void runCaptureSession()}
+                onNotes={() => void window.almanac?.notesShow()}
                 voiceEnabled={VOICE_ENABLED}
                 modKey={modKey}
               />

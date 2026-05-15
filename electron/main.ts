@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import type { BrowserWindow as BrowserWindowType } from "electron";
 import {
   app,
   BrowserWindow,
@@ -13,7 +14,6 @@ import {
   screen,
   Tray,
 } from "electron";
-import type { BrowserWindow as BrowserWindowType } from "electron";
 
 import {
   appEventSchema,
@@ -58,7 +58,7 @@ let alwaysOnTop = true;
 let isQuitting = false;
 
 const NOTIFICATION_SIZE = { width: 540, height: 200 } as const;
-const NOTES_SIZE = { width: 120, height: 260 } as const;
+const NOTES_SIZE = { width: 60, height: 200 } as const;
 
 interface NotificationPayload {
   title: string;
@@ -114,6 +114,20 @@ function updateTrayMenu() {
           syncWindowState();
           updateTrayMenu();
         },
+      },
+      { type: "separator" },
+      {
+        label: "Open Meeting Notes",
+        click: () => createNotesWindow(),
+      },
+      {
+        label: "Show Meeting Prompt",
+        click: () =>
+          createNotificationWindow({
+            title: "Start Alma Notes",
+            description: "Take notes & get suggestions in real time",
+            actionLabel: "Take Notes",
+          }),
       },
       { type: "separator" },
       { role: "reload", label: "Reload" },

@@ -6,6 +6,7 @@ import {
   Mic,
   MicOff,
   MonitorPlay,
+  NotebookPen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,6 +19,7 @@ interface CompactLauncherProps {
   onCapture: () => void;
   onVoice: () => void;
   onScreenShare: () => void;
+  onNotes: () => void;
   voiceEnabled?: boolean;
   modKey?: string;
 }
@@ -34,6 +36,7 @@ export function CompactLauncher({
   onCapture,
   onVoice,
   onScreenShare,
+  onNotes,
   voiceEnabled = false,
   modKey = "⌥",
 }: CompactLauncherProps) {
@@ -44,6 +47,7 @@ export function CompactLauncher({
       onClick: onVoice,
       disabled: !voiceEnabled,
     },
+    { label: "Meeting notes", icon: NotebookPen, onClick: onNotes },
     { label: "Live screen share", icon: MonitorPlay, onClick: onScreenShare },
     { label: "Expand chat", icon: Maximize2, onClick: onOpenChat },
   ];
