@@ -1,3 +1,19 @@
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  AlertCircle,
+  ArrowLeft,
+  CheckCircle2,
+  Headphones,
+  LoaderCircle,
+  Mic,
+  Minimize2,
+  MonitorPlay,
+  Pin,
+  SendHorizonal,
+  Square,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import {
   Suspense,
   lazy,
@@ -9,32 +25,17 @@ import {
   useRef,
   useState,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Headphones,
-  LoaderCircle,
-  Mic,
-  Minimize2,
-  MonitorUp,
-  Pin,
-  SendHorizonal,
-  Square,
-  TriangleAlert,
-  X,
-} from "lucide-react";
 
 import type {
   AppRuntimeInfo,
   AssistantMessage,
   CaptureState,
+  ChatContentPart,
   ModelOption,
   TimelineItem,
   WindowMode,
 } from "@shared/ipc";
 import { timelineItemSchema } from "@shared/ipc";
-import { SEEDED_TIMELINE } from "@shared/mock-data";
 import { sanitizeMultilineText } from "@shared/sanitize";
 
 import { Button } from "@/components/ui/button";
@@ -45,12 +46,6 @@ import {
   matchMeetingWorkflow,
   startNotesTimeline,
 } from "@/lib/mockMeetingAdapter";
-
-const NOTIFICATION_PAYLOAD = {
-  title: "Start Alma Notes",
-  description: "Take notes & get suggestions in real time",
-  actionLabel: "Take Notes",
-};
 import { cn, createId, formatClock, normalizePrompt } from "@/lib/utils";
 
 const CompactLauncher = lazy(async () =>
@@ -61,11 +56,8 @@ const CompactLauncher = lazy(async () =>
 const Transcript = lazy(async () =>
   import("@/features/assistant/Transcript").then((m) => ({ default: m.Transcript })),
 );
-const NotesPill = lazy(async () =>
-  import("@/features/notes/NotesPill").then((m) => ({ default: m.NotesPill })),
-);
 
-const STORAGE_KEY = "almanac.timeline.v1";
+const STORAGE_KEY = "almanac.timeline.v2";
 
 const defaultModels = {
   chat: import.meta.env.VITE_DEFAULT_CHAT_MODEL || "gpt-4o-mini",
@@ -107,19 +99,18 @@ function buildTimelineMessage(
   };
 }
 
-function loadSeedTimeline(): TimelineItem[] {
-  if (typeof window === "undefined") return SEEDED_TIMELINE;
+function loadPersistedTimeline(): TimelineItem[] {
+  if (typeof window === "undefined") return [];
   const stored = window.localStorage.getItem(STORAGE_KEY);
-  if (!stored) return SEEDED_TIMELINE;
+  if (!stored) return [];
   try {
     const parsed = JSON.parse(stored) as unknown[];
-    const items = parsed
+    return parsed
       .map((item) => timelineItemSchema.safeParse(item))
       .filter((item) => item.success)
       .map((item) => item.data);
-    return items.length > 0 ? items : SEEDED_TIMELINE;
   } catch {
-    return SEEDED_TIMELINE;
+    return [];
   }
 }
 
@@ -183,7 +174,7 @@ function Banner({
 export default function App() {
   const [windowMode, setWindowMode] = useState<WindowMode>("compact");
   const [runtimeInfo, setRuntimeInfo] = useState<AppRuntimeInfo | null>(null);
-  const [timeline, setTimeline] = useState<TimelineItem[]>(() => loadSeedTimeline());
+  const [timeline, setTimeline] = useState<TimelineItem[]>(() => loadPersistedTimeline());
   const [input, setInput] = useState("");
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [models, setModels] = useState<ModelOption[]>([]);
@@ -198,6 +189,8 @@ export default function App() {
   const speechEnabledRef = useRef(false);
   const hasBootstrappedRef = useRef(false);
   const streamingMessageIdRef = useRef<string | null>(null);
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [screenShareActive, setScreenShareActive] = useState(false);
   const deferredTimeline = useDeferredValue(timeline);
 
   useEffect(() => {
@@ -235,28 +228,14 @@ export default function App() {
     void Promise.all([
       almanac.getRuntimeInfo(),
       almanac.getWindowState(),
-      almanac.fetchModels().then(
-        (m) => ({ ok: true, models: m }) as const,
-        (err: unknown) => ({ ok: false, error: err }) as const,
-      ),
+      almanac.fetchModels().catch(() => [] as ModelOption[]),
     ])
-      .then(([runtime, state, modelsResult]) => {
+      .then(([runtime, state, available]) => {
         if (!active) return;
         setRuntimeInfo(runtime);
         setWindowMode(state.mode);
         setAlwaysOnTop(state.alwaysOnTop);
-        if (modelsResult.ok) {
-          setModels(modelsResult.models);
-        } else {
-          setModels([]);
-          if (runtime.config.apiKeyPresent) {
-            setRuntimeWarning(
-              modelsResult.error instanceof Error
-                ? `LiteLLM unreachable: ${modelsResult.error.message}`
-                : "LiteLLM is unreachable. Check your network or API key.",
-            );
-          }
-        }
+        setModels(available);
         hasBootstrappedRef.current = true;
       })
       .catch((fetchError) => {
@@ -366,18 +345,25 @@ export default function App() {
   const sendMessage = useCallback(
     async (raw: string) => {
       const trimmed = normalizePrompt(raw);
-      if (!trimmed) return;
+      const image = attachedImage;
+      if (!trimmed && !image) return;
 
       setError(null);
+      const promptText =
+        trimmed ||
+        (image ? "What's on my screen? Briefly describe what you see." : "");
+
       const userItem = buildTimelineMessage("user", trimmed, {
         status: "read",
         source: "mock",
+        imageUrl: image ?? undefined,
       });
 
       appendTimeline([userItem]);
       setInput("");
+      setAttachedImage(null);
 
-      if (DEMO_MODE) {
+      if (DEMO_MODE && !image) {
         const mocked = matchMeetingWorkflow(trimmed);
         if (mocked) {
           window.setTimeout(() => appendTimeline(mocked), 280);
@@ -395,6 +381,13 @@ export default function App() {
       setCaptureState("streaming");
       streamingMessageIdRef.current = assistantId;
 
+      const userContent: string | ChatContentPart[] = image
+        ? [
+            { type: "text", text: promptText },
+            { type: "image_url", image_url: { url: image } },
+          ]
+        : promptText;
+
       try {
         await window.almanac.startChatCompletion({
           messageId: assistantId,
@@ -406,7 +399,7 @@ export default function App() {
                 "You are Alma, a concise, proactive desktop assistant for meetings, notes, and scheduling. Be terse, warm, and lowercase.",
             },
             ...messageHistory,
-            { role: "user", content: trimmed },
+            { role: "user", content: userContent },
           ],
         });
       } catch (streamError) {
@@ -415,7 +408,58 @@ export default function App() {
         setError(streamError instanceof Error ? streamError.message : "Unable to start chat");
       }
     },
-    [appendTimeline, messageHistory, models, runtimeInfo],
+    [appendTimeline, attachedImage, messageHistory, models, runtimeInfo],
+  );
+
+  const captureScreenshot = useCallback(async () => {
+    setError(null);
+    try {
+      const shot = await window.almanac.captureScreen();
+      setAttachedImage(shot.dataUrl);
+      setWindowMode("expanded");
+    } catch (captureError) {
+      setError(
+        captureError instanceof Error ? captureError.message : "Screen capture failed",
+      );
+    }
+  }, []);
+
+  const runScreenObservation = useCallback(
+    async (dataUrl: string) => {
+      const assistantId = createId("assistant");
+      appendTimeline([
+        buildTimelineMessage("assistant", "", { id: assistantId, source: "litellm" }),
+      ]);
+      setCaptureState("streaming");
+      streamingMessageIdRef.current = assistantId;
+      try {
+        await window.almanac.startChatCompletion({
+          messageId: assistantId,
+          model: pickChatModel(models, runtimeInfo?.config.defaultChatModel),
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are Alma, watching the user's screen live. In one or two short sentences, note anything new, useful, or noteworthy you can see. If nothing significant changed, say so briefly. Be terse and lowercase.",
+            },
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Here is the current screen — what's noteworthy right now?" },
+                { type: "image_url", image_url: { url: dataUrl } },
+              ],
+            },
+          ],
+        });
+      } catch (observeError) {
+        setCaptureState("idle");
+        streamingMessageIdRef.current = null;
+        setError(
+          observeError instanceof Error ? observeError.message : "Screen observation failed",
+        );
+      }
+    },
+    [appendTimeline, models, runtimeInfo],
   );
 
   const cancelStreaming = useCallback(() => {
@@ -461,6 +505,68 @@ export default function App() {
     }
   }, [recorder]);
 
+  const startVoice = useCallback(async () => {
+    setError(null);
+    setWindowMode("expanded");
+    if (recorder.isRecording) return;
+    setCaptureState("recording");
+    try {
+      await recorder.startRecording();
+    } catch (micError) {
+      setCaptureState("idle");
+      setError(micError instanceof Error ? micError.message : "Microphone access denied");
+    }
+  }, [recorder]);
+
+  const collapseToCompact = useCallback(() => {
+    setScreenShareActive(false);
+    cancelStreaming();
+    setWindowMode("compact");
+  }, [cancelStreaming]);
+
+  const stopScreenShare = useCallback(() => {
+    setScreenShareActive(false);
+    cancelStreaming();
+  }, [cancelStreaming]);
+
+  const toggleScreenShare = useCallback(() => {
+    setScreenShareActive((active) => {
+      if (active) {
+        cancelStreaming();
+        return false;
+      }
+      setWindowMode("expanded");
+      return true;
+    });
+  }, [cancelStreaming]);
+
+  useEffect(() => {
+    if (!screenShareActive) return;
+    let cancelled = false;
+
+    const tick = async () => {
+      if (cancelled || streamingMessageIdRef.current) return;
+      try {
+        const shot = await window.almanac.captureScreen();
+        if (cancelled) return;
+        await runScreenObservation(shot.dataUrl);
+      } catch (tickError) {
+        if (!cancelled) {
+          setError(
+            tickError instanceof Error ? tickError.message : "Screen capture failed",
+          );
+        }
+      }
+    };
+
+    void tick();
+    const id = window.setInterval(() => void tick(), 12_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [screenShareActive, runScreenObservation]);
+
   const isMac = runtimeInfo?.platform === "darwin";
   const modKey = isMac ? "⌘" : "Ctrl";
 
@@ -472,12 +578,18 @@ export default function App() {
   const CARD_SIZES: Record<WindowMode, { width: number; height: number }> = {
     compact: { width: 220, height: 176 },
     notes: { width: 220, height: 176 },
-    expanded: { width: 1120, height: 560 },
+    expanded: { width: 760, height: 560 },
   };
   const cardSize = CARD_SIZES[windowMode];
+  const isExpanded = windowMode === "expanded";
 
   return (
-    <div className="fixed inset-0 flex justify-center pt-2">
+    <div
+      className={cn(
+        "fixed inset-0 flex justify-center",
+        isExpanded ? "items-center" : "items-start pt-2",
+      )}
+    >
       <motion.div
         animate={{ width: cardSize.width, height: cardSize.height }}
         initial={false}
@@ -496,8 +608,10 @@ export default function App() {
           >
             <Suspense fallback={<LazyFallback />}>
               <CompactLauncher
-                onCapture={() => void window.almanac?.notesShow()}
+                onCapture={() => void captureScreenshot()}
                 onOpenChat={() => setWindowMode("expanded")}
+                onVoice={() => void startVoice()}
+                onScreenShare={toggleScreenShare}
                 modKey={modKey}
               />
             </Suspense>
@@ -516,18 +630,22 @@ export default function App() {
           className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-hairline px-4 py-3"
         >
           <div className="flex items-center" data-no-drag="true">
-            <ShortcutAction
-              label="Ask Alma"
-              keys={[modKey, "↵"]}
-              onClick={() => {/* focus is on input by default */}}
-            />
+            <Button
+              aria-label="Back to launcher"
+              onClick={collapseToCompact}
+              size="icon-sm"
+              variant="outline"
+              title="Back"
+            >
+              <ArrowLeft />
+            </Button>
           </div>
 
           <div className="flex items-center justify-center" data-no-drag="true">
             <ShortcutAction
               label="Capture"
               keys={[modKey, "S"]}
-              onClick={() => void window.almanac?.notesShow()}
+              onClick={() => void captureScreenshot()}
             />
           </div>
 
@@ -543,13 +661,14 @@ export default function App() {
               <Headphones />
             </Button>
             <Button
-              aria-label="Capture screen"
-              onClick={() => void window.almanac?.notesShow()}
+              aria-label={screenShareActive ? "Stop screen share" : "Start screen share"}
+              aria-pressed={screenShareActive}
+              onClick={toggleScreenShare}
               size="icon-sm"
-              variant="ghost"
-              title="Capture screen"
+              variant={screenShareActive ? "outline" : "ghost"}
+              title="Live screen share"
             >
-              <MonitorUp />
+              <MonitorPlay />
             </Button>
             <Button
               aria-label={alwaysOnTop ? "Disable always on top" : "Enable always on top"}
@@ -567,7 +686,7 @@ export default function App() {
             </Button>
             <Button
               aria-label="Collapse to launcher"
-              onClick={() => setWindowMode("compact")}
+              onClick={collapseToCompact}
               size="icon-sm"
               variant="ghost"
               title="Collapse"
@@ -581,7 +700,22 @@ export default function App() {
           <div className="relative z-10 flex h-full flex-col px-5 pb-4">
             <div className="flex items-center justify-center gap-3 py-4">
               <span className="eyebrow">Today · {currentTime}</span>
-              {captureState === "listening" ? (
+              {screenShareActive ? (
+                <button
+                  type="button"
+                  data-no-drag="true"
+                  onClick={stopScreenShare}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-pill border border-border bg-transparent px-2.5 py-0.5",
+                    "font-mono text-[10px] uppercase tracking-eyebrow text-foreground/85",
+                    "transition-colors hover:bg-white/4",
+                  )}
+                >
+                  <span className="size-1.5 animate-pulse rounded-pill bg-accent" />
+                  Watching screen
+                  <Square className="size-2.5 fill-current" />
+                </button>
+              ) : captureState === "listening" ? (
                 <StatusPill>
                   <span className="size-1.5 animate-pulse rounded-pill bg-foreground" />
                   Listening
@@ -635,11 +769,11 @@ export default function App() {
               recording={recorder.isRecording}
               busy={isBusy}
               busyState={captureState}
-              streaming={captureState === "streaming"}
+              attachedImage={attachedImage}
               onChange={setInput}
               onSubmit={() => void sendMessage(input)}
               onToggleRecord={() => void toggleRecording()}
-              onCancelStream={cancelStreaming}
+              onRemoveImage={() => setAttachedImage(null)}
             />
 
           </div>
@@ -660,11 +794,11 @@ const Composer = memo(
       recording: boolean;
       busy: boolean;
       busyState: CaptureState;
-      streaming: boolean;
+      attachedImage: string | null;
       onChange: (v: string) => void;
       onSubmit: () => void;
       onToggleRecord: () => void;
-      onCancelStream: () => void;
+      onRemoveImage: () => void;
     }) {
       const {
         value,
@@ -672,20 +806,44 @@ const Composer = memo(
         recording,
         busy,
         busyState,
-        streaming,
+        attachedImage,
         onChange,
         onSubmit,
         onToggleRecord,
-        onCancelStream,
+        onRemoveImage,
       } = props;
-      const canSend = Boolean(value.trim()) && !busy;
+      const canSend = (Boolean(value.trim()) || Boolean(attachedImage)) && !busy;
       return (
-        <div
-          className={cn(
-            "relative flex items-center gap-1 rounded-pill border border-border bg-transparent py-1 pl-5 pr-1",
-            "transition-colors focus-within:border-white/30",
-          )}
-        >
+        <div className="flex flex-col gap-2">
+          {attachedImage ? (
+            <div
+              className="flex items-center gap-2 self-start rounded-sm border border-hairline bg-canvas-soft p-1.5"
+              data-no-drag="true"
+            >
+              <img
+                src={attachedImage}
+                alt="Screenshot attachment"
+                className="h-12 w-20 rounded-xs border border-hairline object-cover"
+              />
+              <span className="font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
+                Screen
+              </span>
+              <button
+                type="button"
+                aria-label="Remove attachment"
+                onClick={onRemoveImage}
+                className="flex size-5 items-center justify-center rounded-pill text-foreground/60 transition hover:bg-white/6 hover:text-foreground"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ) : null}
+          <div
+            className={cn(
+              "relative flex items-center gap-1 rounded-pill border border-border bg-transparent py-1 pl-5 pr-1",
+              "transition-colors focus-within:border-white/30",
+            )}
+          >
           <textarea
             aria-label="Message Alma"
             data-no-drag="true"
@@ -722,27 +880,16 @@ const Composer = memo(
               <Mic />
             )}
           </Button>
-          {streaming ? (
-            <Button
-              aria-label="Stop generating"
-              onClick={onCancelStream}
-              size="icon"
-              variant="outline"
-              title="Stop"
-            >
-              <Square className="size-3.5 fill-current" />
-            </Button>
-          ) : (
-            <Button
-              aria-label="Send message"
-              disabled={!canSend}
-              onClick={onSubmit}
-              size="icon"
-              variant={canSend ? "primary" : "outline"}
-            >
-              <SendHorizonal />
-            </Button>
-          )}
+          <Button
+            aria-label="Send message"
+            disabled={!canSend}
+            onClick={onSubmit}
+            size="icon"
+            variant={canSend ? "primary" : "outline"}
+          >
+            <SendHorizonal />
+          </Button>
+          </div>
         </div>
       );
     },

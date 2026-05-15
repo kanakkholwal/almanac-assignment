@@ -4,6 +4,7 @@ import {
   app,
   BrowserWindow,
   crashReporter,
+  desktopCapturer,
   dialog,
   globalShortcut,
   ipcMain,
@@ -391,6 +392,56 @@ function closeNotesWindow() {
   notesWindow = null;
 }
 
+const CAPTURE_MAX_EDGE = 1920;
+
+async function captureScreen(): Promise<{ dataUrl: string; width: number; height: number }> {
+  const display = screen.getPrimaryDisplay();
+  const scale = display.scaleFactor || 1;
+  const pxW = Math.round(display.size.width * scale);
+  const pxH = Math.round(display.size.height * scale);
+  const longest = Math.max(pxW, pxH);
+  const factor = longest > CAPTURE_MAX_EDGE ? CAPTURE_MAX_EDGE / longest : 1;
+  const thumbnailSize = {
+    width: Math.max(1, Math.round(pxW * factor)),
+    height: Math.max(1, Math.round(pxH * factor)),
+  };
+
+  // Hide our own overlays so the launcher/chat doesn't appear in the shot.
+  const hidden: BrowserWindowType[] = [];
+  for (const win of [mainWindow, notesWindow, notificationWindow]) {
+    if (win && !win.isDestroyed() && win.isVisible()) {
+      win.hide();
+      hidden.push(win);
+    }
+  }
+  if (hidden.length > 0) {
+    await new Promise((resolve) => setTimeout(resolve, 160));
+  }
+
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ["screen"],
+      thumbnailSize,
+    });
+    const primary =
+      sources.find((s) => s.display_id === String(display.id)) ?? sources[0];
+    if (!primary || primary.thumbnail.isEmpty()) {
+      throw new Error("Screen capture returned no image");
+    }
+    const size = primary.thumbnail.getSize();
+    const jpeg = primary.thumbnail.toJPEG(80);
+    return {
+      dataUrl: `data:image/jpeg;base64,${jpeg.toString("base64")}`,
+      width: size.width,
+      height: size.height,
+    };
+  } finally {
+    for (const win of hidden) {
+      if (!win.isDestroyed()) win.show();
+    }
+  }
+}
+
 function setMode(mode: WindowMode) {
   windowMode = mode;
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -504,6 +555,8 @@ function registerIpc() {
     createNotesWindow();
   });
 
+  ipcMain.handle(IPC_CHANNELS.captureScreen, async () => captureScreen());
+
   ipcMain.handle(IPC_CHANNELS.notesStop, async () => {
     closeNotesWindow();
   });
@@ -539,7 +592,7 @@ async function bootstrap() {
   globalShortcut.register("CommandOrControl+Shift+Space", () => toggleWindow());
   globalShortcut.register("CommandOrControl+Shift+A", () => toggleWindow());
 
-  registerIpc();
+  registerIpc();  
 
   setupAutoUpdates((status, detail) => {
     sendAppEvent({

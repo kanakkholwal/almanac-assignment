@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type {
   AppEvent,
   AppRuntimeInfo,
+  CaptureResult,
   ChatCompletionRequest,
   MockMeetingEvent,
   ModelOption,
@@ -14,6 +15,7 @@ import type {
 import {
   appEventSchema,
   appRuntimeInfoSchema,
+  captureResultSchema,
   chatCompletionRequestSchema,
   IPC_CHANNELS,
   mockMeetingEventSchema,
@@ -84,6 +86,9 @@ const api = {
   notesShow: () => invoke<void>(IPC_CHANNELS.notesShow),
   notesStop: () => invoke<void>(IPC_CHANNELS.notesStop),
   notesOpenChat: () => invoke<void>(IPC_CHANNELS.notesOpenChat),
+
+  captureScreen: async () =>
+    captureResultSchema.parse(await invoke<CaptureResult>(IPC_CHANNELS.captureScreen)),
 
   onAssistantStream: (listener: (payload: StreamEventPayload) => void) => {
     const handler = (_event: IpcRendererEvent, payload: StreamEventPayload) => {

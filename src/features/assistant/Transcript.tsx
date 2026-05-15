@@ -48,7 +48,11 @@ export function Transcript({ items }: TranscriptProps) {
           }}
         >
           {item.kind === "message" && item.message.role === "user" ? (
-            <UserMessage content={item.message.content} status={item.message.status} />
+            <UserMessage
+              content={item.message.content}
+              status={item.message.status}
+              imageUrl={item.message.imageUrl}
+            />
           ) : null}
 
           {item.kind === "message" && item.message.role !== "user" ? (
@@ -80,20 +84,31 @@ export function Transcript({ items }: TranscriptProps) {
 function UserMessage({
   content,
   status,
+  imageUrl,
 }: {
   content: string;
   status?: "sending" | "delivered" | "read";
+  imageUrl?: string;
 }) {
   return (
     <div className="flex flex-col items-end">
-      <div
-        className={cn(
-          "max-w-[78%] rounded-sm border border-hairline bg-canvas-soft px-3.5 py-2",
-          "font-sans text-[14px] leading-6 text-foreground",
-        )}
-      >
-        {renderContent(content)}
-      </div>
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt="Captured screen"
+          className="mb-1.5 max-w-[78%] rounded-sm border border-hairline"
+        />
+      ) : null}
+      {content ? (
+        <div
+          className={cn(
+            "max-w-[78%] rounded-sm border border-hairline bg-canvas-soft px-3.5 py-2",
+            "font-sans text-[14px] leading-6 text-foreground",
+          )}
+        >
+          {renderContent(content)}
+        </div>
+      ) : null}
       {status === "read" ? (
         <div className="mt-1 flex items-center gap-1 pr-1 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
           <CheckCheck className="size-3 text-foreground/70" />

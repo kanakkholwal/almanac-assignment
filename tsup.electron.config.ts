@@ -7,6 +7,10 @@ export default defineConfig({
   target: "node20",
   platform: "node",
   external: ["electron", "electron-updater"],
+  // The preload runs in a sandboxed renderer where `require()` is restricted to
+  // electron + a small whitelist. Any npm dep it uses must be bundled inline,
+  // otherwise the preload throws on load and `window.almanac` is never exposed.
+  noExternal: ["zod"],
   splitting: false,
   sourcemap: true,
   clean: true,

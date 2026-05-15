@@ -1,9 +1,10 @@
 import { motion } from "framer-motion";
 import {
-  Headphones,
+  Camera,
   Maximize2,
   MessageSquareText,
-  MonitorUp,
+  Mic,
+  MonitorPlay,
   type LucideIcon,
 } from "lucide-react";
 
@@ -14,6 +15,8 @@ import { cn } from "@/lib/utils";
 interface CompactLauncherProps {
   onOpenChat: () => void;
   onCapture: () => void;
+  onVoice: () => void;
+  onScreenShare: () => void;
   modKey?: string;
 }
 
@@ -26,12 +29,14 @@ interface ToolAction {
 export function CompactLauncher({
   onOpenChat,
   onCapture,
+  onVoice,
+  onScreenShare,
   modKey = "⌥",
 }: CompactLauncherProps) {
   const tools: ToolAction[] = [
-    { label: "Voice output", icon: Headphones, onClick: onCapture },
-    { label: "Capture screen", icon: MonitorUp, onClick: onCapture },
-    { label: "Expand", icon: Maximize2, onClick: onOpenChat },
+    { label: "Talk to Alma", icon: Mic, onClick: onVoice },
+    { label: "Live screen share", icon: MonitorPlay, onClick: onScreenShare },
+    { label: "Expand chat", icon: Maximize2, onClick: onOpenChat },
   ];
 
   return (
@@ -51,7 +56,7 @@ export function CompactLauncher({
           onClick={onOpenChat}
         />
         <ShortcutRow
-          icon={MonitorUp}
+          icon={Camera}
           label="Capture"
           keys={[modKey, "S"]}
           onClick={onCapture}
@@ -63,6 +68,7 @@ export function CompactLauncher({
           <Button
             key={label}
             aria-label={label}
+            title={label}
             onClick={onClick}
             size="icon"
             variant="outline"

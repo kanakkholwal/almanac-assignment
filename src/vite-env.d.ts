@@ -3,6 +3,7 @@
 import type {
   AppEvent,
   AppRuntimeInfo,
+  CaptureResult,
   ChatCompletionRequest,
   MockMeetingEvent,
   ModelOption,
@@ -46,6 +47,7 @@ declare global {
       notesShow: () => Promise<void>;
       notesStop: () => Promise<void>;
       notesOpenChat: () => Promise<void>;
+      captureScreen: () => Promise<CaptureResult>;
       onAssistantStream: (listener: (payload: StreamEventPayload) => void) => () => void;
       onAppEvent: (listener: (payload: AppEvent) => void) => () => void;
       onNotificationData: (listener: (payload: NotificationPayload) => void) => () => void;

@@ -307,7 +307,14 @@ export async function streamChatCompletion(
 
   const sanitizedMessages = request.messages.map((message) => ({
     role: message.role,
-    content: sanitizeMultilineText(message.content, 20_000),
+    content:
+      typeof message.content === "string"
+        ? sanitizeMultilineText(message.content, 20_000)
+        : message.content.map((part) =>
+            part.type === "text"
+              ? { type: "text" as const, text: sanitizeMultilineText(part.text, 20_000) }
+              : part,
+          ),
   }));
 
   const body = {

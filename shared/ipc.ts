@@ -24,7 +24,15 @@ export const IPC_CHANNELS = {
   notesShow: "notes:show",
   notesStop: "notes:stop",
   notesOpenChat: "notes:open-chat",
+  captureScreen: "capture:screen",
 } as const;
+
+export const captureResultSchema = z.object({
+  dataUrl: z.string().min(1),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+export type CaptureResult = z.infer<typeof captureResultSchema>;
 
 export const windowModeSchema = z.enum(["compact", "notes", "expanded"]);
 export type WindowMode = z.infer<typeof windowModeSchema>;
@@ -71,6 +79,7 @@ export const assistantMessageSchema = z.object({
   createdAt: z.string().min(1),
   status: z.enum(["sending", "delivered", "read"]).optional(),
   source: z.enum(["litellm", "mock"]).optional(),
+  imageUrl: z.string().optional(),
 });
 export type AssistantMessage = z.infer<typeof assistantMessageSchema>;
 
@@ -116,9 +125,27 @@ export const timelineItemSchema = z.discriminatedUnion("kind", [
 ]);
 export type TimelineItem = z.infer<typeof timelineItemSchema>;
 
+export const chatContentPartSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("text"),
+    text: z.string().max(20_000),
+  }),
+  z.object({
+    type: z.literal("image_url"),
+    image_url: z.object({
+      url: z.string().min(1),
+      detail: z.enum(["auto", "low", "high"]).optional(),
+    }),
+  }),
+]);
+export type ChatContentPart = z.infer<typeof chatContentPartSchema>;
+
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
-  content: z.string().min(1).max(20_000),
+  content: z.union([
+    z.string().min(1).max(20_000),
+    z.array(chatContentPartSchema).min(1),
+  ]),
 });
 
 export const chatCompletionRequestSchema = z.object({
