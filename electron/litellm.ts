@@ -305,17 +305,23 @@ export async function streamChatCompletion(
   }
   activeStreams.set(request.messageId, controller);
 
-  const sanitizedMessages = request.messages.map((message) => ({
-    role: message.role,
-    content:
+  const sanitizedMessages = request.messages
+    .filter((message) =>
       typeof message.content === "string"
-        ? sanitizeMultilineText(message.content, 20_000)
-        : message.content.map((part) =>
-            part.type === "text"
-              ? { type: "text" as const, text: sanitizeMultilineText(part.text, 20_000) }
-              : part,
-          ),
-  }));
+        ? message.content.trim().length > 0
+        : message.content.length > 0,
+    )
+    .map((message) => ({
+      role: message.role,
+      content:
+        typeof message.content === "string"
+          ? sanitizeMultilineText(message.content, 20_000)
+          : message.content.map((part) =>
+              part.type === "text"
+                ? { type: "text" as const, text: sanitizeMultilineText(part.text, 20_000) }
+                : part,
+            ),
+    }));
 
   const body = {
     model: request.model || getDefaults().chat,

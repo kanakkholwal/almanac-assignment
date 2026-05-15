@@ -1,5 +1,6 @@
 import { motion } from "framer-motion";
 import { CheckCheck, FileText } from "lucide-react";
+import { Streamdown } from "streamdown";
 
 import type { TimelineItem } from "@shared/ipc";
 
@@ -51,7 +52,7 @@ export function Transcript({ items }: TranscriptProps) {
             <UserMessage
               content={item.message.content}
               status={item.message.status}
-              imageUrl={item.message.imageUrl}
+              imageUrls={item.message.imageUrls}
             />
           ) : null}
 
@@ -84,20 +85,28 @@ export function Transcript({ items }: TranscriptProps) {
 function UserMessage({
   content,
   status,
-  imageUrl,
+  imageUrls,
 }: {
   content: string;
   status?: "sending" | "delivered" | "read";
-  imageUrl?: string;
+  imageUrls?: string[];
 }) {
   return (
     <div className="flex flex-col items-end">
-      {imageUrl ? (
-        <img
-          src={imageUrl}
-          alt="Captured screen"
-          className="mb-1.5 max-w-[78%] rounded-sm border border-hairline"
-        />
+      {imageUrls && imageUrls.length > 0 ? (
+        <div className="mb-1.5 flex max-w-[78%] flex-wrap justify-end gap-1.5">
+          {imageUrls.map((url, index) => (
+            <img
+              key={`${index}-${url.slice(-16)}`}
+              src={url}
+              alt={`Captured screen ${index + 1}`}
+              className={cn(
+                "rounded-sm border border-hairline object-cover",
+                imageUrls.length > 1 ? "h-20 w-32" : "max-w-full",
+              )}
+            />
+          ))}
+        </div>
       ) : null}
       {content ? (
         <div
@@ -124,17 +133,27 @@ function UserMessage({
 }
 
 function AssistantMessage({ content }: { content: string }) {
-  return (
-    <div className="font-sans text-[14px] leading-7 text-foreground whitespace-pre-wrap wrap-break-word">
-      {content ? (
-        renderContent(content)
-      ) : (
+  if (!content) {
+    return (
+      <div className="font-sans text-[14px] leading-7 text-foreground">
         <span className="inline-flex items-center gap-1.5 text-muted-foreground">
           <span className="size-1.5 animate-pulse rounded-pill bg-foreground/70" />
           thinking
         </span>
+      </div>
+    );
+  }
+  return (
+    <Streamdown
+      className={cn(
+        "font-sans text-[14px] leading-7 text-foreground wrap-break-word",
+        "[&_a]:text-foreground [&_a]:underline [&_a]:underline-offset-4",
+        "[&_pre]:rounded-sm [&_pre]:border [&_pre]:border-hairline",
+        "[&_code]:font-mono [&_code]:text-[13px]",
       )}
-    </div>
+    >
+      {content}
+    </Streamdown>
   );
 }
 

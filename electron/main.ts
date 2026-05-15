@@ -303,6 +303,7 @@ function createNotificationWindow(payload: NotificationPayload | null) {
     notificationWindow.setBackgroundColor("#00000000");
   }
 
+  notificationWindow.setContentProtection(true);
   notificationWindow.setAlwaysOnTop(true, "screen-saver");
   void notificationWindow.loadURL(resolveNotificationUrl());
 
@@ -376,6 +377,7 @@ function createNotesWindow() {
     notesWindow.setBackgroundColor("#00000000");
   }
 
+  notesWindow.setContentProtection(true);
   notesWindow.setAlwaysOnTop(true, "screen-saver");
   void notesWindow.loadURL(resolveNotesUrl());
 
@@ -406,40 +408,24 @@ async function captureScreen(): Promise<{ dataUrl: string; width: number; height
     height: Math.max(1, Math.round(pxH * factor)),
   };
 
-  // Hide our own overlays so the launcher/chat doesn't appear in the shot.
-  const hidden: BrowserWindowType[] = [];
-  for (const win of [mainWindow, notesWindow, notificationWindow]) {
-    if (win && !win.isDestroyed() && win.isVisible()) {
-      win.hide();
-      hidden.push(win);
-    }
+  // Almanac's windows use setContentProtection(true), so they are already
+  // excluded from the capture — no need to hide/show them.
+  const sources = await desktopCapturer.getSources({
+    types: ["screen"],
+    thumbnailSize,
+  });
+  const primary =
+    sources.find((s) => s.display_id === String(display.id)) ?? sources[0];
+  if (!primary || primary.thumbnail.isEmpty()) {
+    throw new Error("Screen capture returned no image");
   }
-  if (hidden.length > 0) {
-    await new Promise((resolve) => setTimeout(resolve, 160));
-  }
-
-  try {
-    const sources = await desktopCapturer.getSources({
-      types: ["screen"],
-      thumbnailSize,
-    });
-    const primary =
-      sources.find((s) => s.display_id === String(display.id)) ?? sources[0];
-    if (!primary || primary.thumbnail.isEmpty()) {
-      throw new Error("Screen capture returned no image");
-    }
-    const size = primary.thumbnail.getSize();
-    const jpeg = primary.thumbnail.toJPEG(80);
-    return {
-      dataUrl: `data:image/jpeg;base64,${jpeg.toString("base64")}`,
-      width: size.width,
-      height: size.height,
-    };
-  } finally {
-    for (const win of hidden) {
-      if (!win.isDestroyed()) win.show();
-    }
-  }
+  const size = primary.thumbnail.getSize();
+  const jpeg = primary.thumbnail.toJPEG(80);
+  return {
+    dataUrl: `data:image/jpeg;base64,${jpeg.toString("base64")}`,
+    width: size.width,
+    height: size.height,
+  };
 }
 
 function setMode(mode: WindowMode) {

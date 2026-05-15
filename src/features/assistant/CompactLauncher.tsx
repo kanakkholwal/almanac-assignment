@@ -4,6 +4,7 @@ import {
   Maximize2,
   MessageSquareText,
   Mic,
+  MicOff,
   MonitorPlay,
   type LucideIcon,
 } from "lucide-react";
@@ -17,6 +18,7 @@ interface CompactLauncherProps {
   onCapture: () => void;
   onVoice: () => void;
   onScreenShare: () => void;
+  voiceEnabled?: boolean;
   modKey?: string;
 }
 
@@ -24,6 +26,7 @@ interface ToolAction {
   label: string;
   icon: LucideIcon;
   onClick: () => void;
+  disabled?: boolean;
 }
 
 export function CompactLauncher({
@@ -31,10 +34,16 @@ export function CompactLauncher({
   onCapture,
   onVoice,
   onScreenShare,
+  voiceEnabled = false,
   modKey = "⌥",
 }: CompactLauncherProps) {
   const tools: ToolAction[] = [
-    { label: "Talk to Alma", icon: Mic, onClick: onVoice },
+    {
+      label: voiceEnabled ? "Talk to Alma" : "Voice unavailable",
+      icon: voiceEnabled ? Mic : MicOff,
+      onClick: onVoice,
+      disabled: !voiceEnabled,
+    },
     { label: "Live screen share", icon: MonitorPlay, onClick: onScreenShare },
     { label: "Expand chat", icon: Maximize2, onClick: onOpenChat },
   ];
@@ -64,12 +73,13 @@ export function CompactLauncher({
       </div>
 
       <div className="flex items-center justify-around gap-2" data-no-drag="true">
-        {tools.map(({ label, icon: Icon, onClick }) => (
+        {tools.map(({ label, icon: Icon, onClick, disabled }) => (
           <Button
             key={label}
             aria-label={label}
             title={label}
             onClick={onClick}
+            disabled={disabled}
             size="icon"
             variant="outline"
           >

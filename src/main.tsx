@@ -5,6 +5,7 @@ import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { NotificationView } from "./features/meeting/NotificationView";
 import { NotesView } from "./features/notes/NotesView";
+import "streamdown/styles.css";
 import "./index.css";
 
 type View = "main" | "notification" | "notes";

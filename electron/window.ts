@@ -87,6 +87,10 @@ export function createMainWindow(initialState: PersistedWindowState): BrowserWin
     win.setBackgroundColor("#00000000");
   }
 
+  // Exclude Almanac itself from screen capture so it never appears in the
+  // screenshots it takes — and so capture needs no hide/show flicker.
+  win.setContentProtection(true);
+
   void win.loadURL(resolveRendererUrl());
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.setAlwaysOnTop(initialState.alwaysOnTop, "screen-saver");

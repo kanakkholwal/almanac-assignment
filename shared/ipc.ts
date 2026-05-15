@@ -79,7 +79,7 @@ export const assistantMessageSchema = z.object({
   createdAt: z.string().min(1),
   status: z.enum(["sending", "delivered", "read"]).optional(),
   source: z.enum(["litellm", "mock"]).optional(),
-  imageUrl: z.string().optional(),
+  imageUrls: z.array(z.string()).optional(),
 });
 export type AssistantMessage = z.infer<typeof assistantMessageSchema>;
 
@@ -142,8 +142,10 @@ export type ChatContentPart = z.infer<typeof chatContentPartSchema>;
 
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
+  // Empty string content is tolerated here; the main process drops empty
+  // messages before sending so a stray placeholder never breaks a request.
   content: z.union([
-    z.string().min(1).max(20_000),
+    z.string().max(20_000),
     z.array(chatContentPartSchema).min(1),
   ]),
 });

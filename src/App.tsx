@@ -3,14 +3,17 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  HeadphoneOff,
   Headphones,
   LoaderCircle,
   Mic,
+  MicOff,
   Minimize2,
   MonitorPlay,
   Pin,
   SendHorizonal,
   Square,
+  Trash2,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -38,6 +41,7 @@ import type {
 import { timelineItemSchema } from "@shared/ipc";
 import { sanitizeMultilineText } from "@shared/sanitize";
 
+import { AlmaAvatar } from "@/components/AlmaAvatar";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -60,12 +64,29 @@ const Transcript = lazy(async () =>
 const STORAGE_KEY = "almanac.timeline.v2";
 
 const defaultModels = {
-  chat: import.meta.env.VITE_DEFAULT_CHAT_MODEL || "gpt-4o-mini",
-  transcribe: import.meta.env.VITE_DEFAULT_TRANSCRIBE_MODEL || "gpt-4o-mini-transcribe",
-  speech: import.meta.env.VITE_DEFAULT_TTS_MODEL || "gpt-4o-mini-tts",
+  chat: import.meta.env.VITE_DEFAULT_CHAT_MODEL || "claude-sonnet-4-6",
+  transcribe: import.meta.env.VITE_DEFAULT_TRANSCRIBE_MODEL || "whisper-1",
+  speech: import.meta.env.VITE_DEFAULT_TTS_MODEL || "tts-1",
 };
 
 const DEMO_MODE = import.meta.env.VITE_ENABLE_DEMO === "true";
+
+// The LiteLLM backend exposes no speech-to-text or text-to-speech models, so
+// voice input/output is disabled. Flip to true once audio models are available.
+const VOICE_ENABLED = false;
+
+// A "screen session" captures a short bounded burst of frames the user can then
+// ask about — controlled and cheap, vs. an open-ended polling loop.
+const SESSION_FRAME_COUNT = 5;
+const SESSION_FRAME_INTERVAL_MS = 2000;
+
+// Models that cannot serve /v1/chat/completions — image generation, embeddings,
+// realtime audio, speech. Excluded from the chat picker and fallback selection.
+const NON_CHAT_MODEL = /imagen|image-preview|image-generate|embedding|realtime|tts|whisper/i;
+
+function chatModels(available: ModelOption[]): ModelOption[] {
+  return available.filter((m) => !NON_CHAT_MODEL.test(m.id));
+}
 
 function pickChatModel(
   available: ModelOption[],
@@ -73,8 +94,11 @@ function pickChatModel(
 ): string {
   const preferred = configuredDefault ?? defaultModels.chat;
   if (available.some((m) => m.id === preferred)) return preferred;
-  const fallback = available.find((m) => /gpt-4o|gpt-4|claude|llama/i.test(m.id));
-  return fallback?.id ?? available[0]?.id ?? preferred;
+  const usable = chatModels(available);
+  const fallback = usable.find((m) =>
+    /claude-sonnet|claude-opus|gpt-5\.|gemini-3/i.test(m.id),
+  );
+  return fallback?.id ?? usable[0]?.id ?? available[0]?.id ?? preferred;
 }
 
 function buildTimelineMessage(
@@ -178,6 +202,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [models, setModels] = useState<ModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState<string>("");
   const [speechEnabled, setSpeechEnabled] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -189,8 +214,9 @@ export default function App() {
   const speechEnabledRef = useRef(false);
   const hasBootstrappedRef = useRef(false);
   const streamingMessageIdRef = useRef<string | null>(null);
-  const [attachedImage, setAttachedImage] = useState<string | null>(null);
-  const [screenShareActive, setScreenShareActive] = useState(false);
+  const [attachedImages, setAttachedImages] = useState<string[]>([]);
+  const [captureCount, setCaptureCount] = useState<number | null>(null);
+  const captureSessionRef = useRef(false);
   const deferredTimeline = useDeferredValue(timeline);
 
   useEffect(() => {
@@ -236,6 +262,7 @@ export default function App() {
         setWindowMode(state.mode);
         setAlwaysOnTop(state.alwaysOnTop);
         setModels(available);
+        setSelectedModel(pickChatModel(available, runtime.config.defaultChatModel));
         hasBootstrappedRef.current = true;
       })
       .catch((fetchError) => {
@@ -250,6 +277,16 @@ export default function App() {
       if (payload.error) {
         setCaptureState("idle");
         streamingMessageIdRef.current = null;
+        setTimeline((current) =>
+          current.filter(
+            (item) =>
+              !(
+                item.kind === "message" &&
+                item.message.id === payload.messageId &&
+                item.message.content.trim().length === 0
+              ),
+          ),
+        );
         setError(payload.error);
         return;
       }
@@ -324,7 +361,8 @@ export default function App() {
     () =>
       timeline
         .filter((item): item is Extract<TimelineItem, { kind: "message" }> => item.kind === "message")
-        .map((item) => ({ role: item.message.role, content: item.message.content })),
+        .map((item) => ({ role: item.message.role, content: item.message.content }))
+        .filter((message) => message.content.trim().length > 0),
     [timeline],
   );
 
@@ -345,25 +383,27 @@ export default function App() {
   const sendMessage = useCallback(
     async (raw: string) => {
       const trimmed = normalizePrompt(raw);
-      const image = attachedImage;
-      if (!trimmed && !image) return;
+      const images = attachedImages;
+      if (!trimmed && images.length === 0) return;
 
       setError(null);
       const promptText =
         trimmed ||
-        (image ? "What's on my screen? Briefly describe what you see." : "");
+        (images.length > 1
+          ? "These frames were captured from my screen over a few seconds. Describe what's happening and anything noteworthy."
+          : "What's on my screen? Briefly describe what you see.");
 
       const userItem = buildTimelineMessage("user", trimmed, {
         status: "read",
         source: "mock",
-        imageUrl: image ?? undefined,
+        imageUrls: images.length > 0 ? images : undefined,
       });
 
       appendTimeline([userItem]);
       setInput("");
-      setAttachedImage(null);
+      setAttachedImages([]);
 
-      if (DEMO_MODE && !image) {
+      if (DEMO_MODE && images.length === 0) {
         const mocked = matchMeetingWorkflow(trimmed);
         if (mocked) {
           window.setTimeout(() => appendTimeline(mocked), 280);
@@ -381,17 +421,21 @@ export default function App() {
       setCaptureState("streaming");
       streamingMessageIdRef.current = assistantId;
 
-      const userContent: string | ChatContentPart[] = image
-        ? [
-            { type: "text", text: promptText },
-            { type: "image_url", image_url: { url: image } },
-          ]
-        : promptText;
+      const userContent: string | ChatContentPart[] =
+        images.length > 0
+          ? [
+              { type: "text", text: promptText },
+              ...images.map((url) => ({
+                type: "image_url" as const,
+                image_url: { url },
+              })),
+            ]
+          : promptText;
 
       try {
         await window.almanac.startChatCompletion({
           messageId: assistantId,
-          model: pickChatModel(models, runtimeInfo?.config.defaultChatModel),
+          model: selectedModel || pickChatModel(models, runtimeInfo?.config.defaultChatModel),
           messages: [
             {
               role: "system",
@@ -408,14 +452,14 @@ export default function App() {
         setError(streamError instanceof Error ? streamError.message : "Unable to start chat");
       }
     },
-    [appendTimeline, attachedImage, messageHistory, models, runtimeInfo],
+    [appendTimeline, attachedImages, messageHistory, models, runtimeInfo, selectedModel],
   );
 
   const captureScreenshot = useCallback(async () => {
     setError(null);
     try {
       const shot = await window.almanac.captureScreen();
-      setAttachedImage(shot.dataUrl);
+      setAttachedImages((prev) => [...prev, shot.dataUrl]);
       setWindowMode("expanded");
     } catch (captureError) {
       setError(
@@ -424,43 +468,40 @@ export default function App() {
     }
   }, []);
 
-  const runScreenObservation = useCallback(
-    async (dataUrl: string) => {
-      const assistantId = createId("assistant");
-      appendTimeline([
-        buildTimelineMessage("assistant", "", { id: assistantId, source: "litellm" }),
-      ]);
-      setCaptureState("streaming");
-      streamingMessageIdRef.current = assistantId;
-      try {
-        await window.almanac.startChatCompletion({
-          messageId: assistantId,
-          model: pickChatModel(models, runtimeInfo?.config.defaultChatModel),
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are Alma, watching the user's screen live. In one or two short sentences, note anything new, useful, or noteworthy you can see. If nothing significant changed, say so briefly. Be terse and lowercase.",
-            },
-            {
-              role: "user",
-              content: [
-                { type: "text", text: "Here is the current screen — what's noteworthy right now?" },
-                { type: "image_url", image_url: { url: dataUrl } },
-              ],
-            },
-          ],
-        });
-      } catch (observeError) {
-        setCaptureState("idle");
-        streamingMessageIdRef.current = null;
-        setError(
-          observeError instanceof Error ? observeError.message : "Screen observation failed",
-        );
+  const runCaptureSession = useCallback(async () => {
+    if (captureSessionRef.current) return;
+    setError(null);
+    setWindowMode("expanded");
+    captureSessionRef.current = true;
+    setCaptureCount(0);
+    const frames: string[] = [];
+    try {
+      for (let i = 0; i < SESSION_FRAME_COUNT; i += 1) {
+        if (!captureSessionRef.current) break;
+        const shot = await window.almanac.captureScreen();
+        if (!captureSessionRef.current) break;
+        frames.push(shot.dataUrl);
+        setCaptureCount(frames.length);
+        if (i < SESSION_FRAME_COUNT - 1) {
+          await new Promise((resolve) => setTimeout(resolve, SESSION_FRAME_INTERVAL_MS));
+        }
       }
-    },
-    [appendTimeline, models, runtimeInfo],
-  );
+      if (frames.length > 0) {
+        setAttachedImages((prev) => [...prev, ...frames]);
+      }
+    } catch (sessionError) {
+      setError(
+        sessionError instanceof Error ? sessionError.message : "Screen capture failed",
+      );
+    } finally {
+      captureSessionRef.current = false;
+      setCaptureCount(null);
+    }
+  }, []);
+
+  const cancelCaptureSession = useCallback(() => {
+    captureSessionRef.current = false;
+  }, []);
 
   const cancelStreaming = useCallback(() => {
     const id = streamingMessageIdRef.current;
@@ -469,6 +510,14 @@ export default function App() {
     streamingMessageIdRef.current = null;
     setCaptureState("idle");
   }, []);
+
+  const clearChat = useCallback(() => {
+    cancelStreaming();
+    setTimeline([]);
+    setInput("");
+    setAttachedImages([]);
+    setError(null);
+  }, [cancelStreaming]);
 
   const recorder = usePushToTalk(async ({ blob, mimeType }) => {
     setCaptureState("transcribing");
@@ -519,53 +568,10 @@ export default function App() {
   }, [recorder]);
 
   const collapseToCompact = useCallback(() => {
-    setScreenShareActive(false);
+    cancelCaptureSession();
     cancelStreaming();
     setWindowMode("compact");
-  }, [cancelStreaming]);
-
-  const stopScreenShare = useCallback(() => {
-    setScreenShareActive(false);
-    cancelStreaming();
-  }, [cancelStreaming]);
-
-  const toggleScreenShare = useCallback(() => {
-    setScreenShareActive((active) => {
-      if (active) {
-        cancelStreaming();
-        return false;
-      }
-      setWindowMode("expanded");
-      return true;
-    });
-  }, [cancelStreaming]);
-
-  useEffect(() => {
-    if (!screenShareActive) return;
-    let cancelled = false;
-
-    const tick = async () => {
-      if (cancelled || streamingMessageIdRef.current) return;
-      try {
-        const shot = await window.almanac.captureScreen();
-        if (cancelled) return;
-        await runScreenObservation(shot.dataUrl);
-      } catch (tickError) {
-        if (!cancelled) {
-          setError(
-            tickError instanceof Error ? tickError.message : "Screen capture failed",
-          );
-        }
-      }
-    };
-
-    void tick();
-    const id = window.setInterval(() => void tick(), 12_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [screenShareActive, runScreenObservation]);
+  }, [cancelCaptureSession, cancelStreaming]);
 
   const isMac = runtimeInfo?.platform === "darwin";
   const modKey = isMac ? "⌘" : "Ctrl";
@@ -611,7 +617,8 @@ export default function App() {
                 onCapture={() => void captureScreenshot()}
                 onOpenChat={() => setWindowMode("expanded")}
                 onVoice={() => void startVoice()}
-                onScreenShare={toggleScreenShare}
+                onScreenShare={() => void runCaptureSession()}
+                voiceEnabled={VOICE_ENABLED}
                 modKey={modKey}
               />
             </Suspense>
@@ -627,7 +634,7 @@ export default function App() {
           >
         <header
           data-drag-region="true"
-          className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-hairline px-4 py-3"
+          className="flex justify-between items-center gap-3 border-b border-hairline px-4 py-3"
         >
           <div className="flex items-center" data-no-drag="true">
             <Button
@@ -653,22 +660,35 @@ export default function App() {
             <Button
               aria-label="Toggle voice output"
               aria-pressed={speechEnabled}
+              disabled={!VOICE_ENABLED}
               onClick={() => setSpeechEnabled((v) => !v)}
               size="icon-sm"
               variant={speechEnabled ? "outline" : "ghost"}
-              title="Voice output"
+              title={VOICE_ENABLED ? "Voice output" : "Voice output unavailable"}
             >
-              <Headphones />
+              {VOICE_ENABLED ? <Headphones /> : <HeadphoneOff />}
             </Button>
             <Button
-              aria-label={screenShareActive ? "Stop screen share" : "Start screen share"}
-              aria-pressed={screenShareActive}
-              onClick={toggleScreenShare}
+              aria-label="Capture screen session"
+              aria-pressed={captureCount !== null}
+              disabled={captureCount !== null}
+              onClick={() => void runCaptureSession()}
               size="icon-sm"
-              variant={screenShareActive ? "outline" : "ghost"}
-              title="Live screen share"
+              variant={captureCount !== null ? "outline" : "ghost"}
+              title={`Capture ${SESSION_FRAME_COUNT} frames over ${
+                (SESSION_FRAME_COUNT - 1) * (SESSION_FRAME_INTERVAL_MS / 1000)
+              }s`}
             >
               <MonitorPlay />
+            </Button>
+            <Button
+              aria-label="Clear chat"
+              onClick={clearChat}
+              size="icon-sm"
+              variant="ghost"
+              title="Clear chat"
+            >
+              <Trash2 />
             </Button>
             <Button
               aria-label={alwaysOnTop ? "Disable always on top" : "Enable always on top"}
@@ -700,11 +720,30 @@ export default function App() {
           <div className="relative z-10 flex h-full flex-col px-5 pb-4">
             <div className="flex items-center justify-center gap-3 py-4">
               <span className="eyebrow">Today · {currentTime}</span>
-              {screenShareActive ? (
+              {models.length > 0 ? (
+                <select
+                  data-no-drag="true"
+                  aria-label="Chat model"
+                  value={selectedModel}
+                  onChange={(event) => setSelectedModel(event.target.value)}
+                  className={cn(
+                    "max-w-50 cursor-pointer rounded-pill border border-border bg-transparent px-2.5 py-0.5",
+                    "font-mono text-[10px] uppercase tracking-eyebrow text-foreground/85 outline-none",
+                    "transition-colors hover:bg-white/4 focus-visible:border-white/30",
+                  )}
+                >
+                  {chatModels(models).map((model) => (
+                    <option key={model.id} value={model.id} className="bg-canvas-card">
+                      {model.id}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              {captureCount !== null ? (
                 <button
                   type="button"
                   data-no-drag="true"
-                  onClick={stopScreenShare}
+                  onClick={cancelCaptureSession}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-pill border border-border bg-transparent px-2.5 py-0.5",
                     "font-mono text-[10px] uppercase tracking-eyebrow text-foreground/85",
@@ -712,7 +751,7 @@ export default function App() {
                   )}
                 >
                   <span className="size-1.5 animate-pulse rounded-pill bg-accent" />
-                  Watching screen
+                  Capturing {captureCount}/{SESSION_FRAME_COUNT}
                   <Square className="size-2.5 fill-current" />
                 </button>
               ) : captureState === "listening" ? (
@@ -733,13 +772,20 @@ export default function App() {
               ) : null}
             </div>
 
-            <ScrollArea className="scroll-mask min-h-0 flex-1" viewportRef={viewportRef}>
-              <div className="pb-6 pr-1.5">
-                <Suspense fallback={<LazyFallback />}>
-                  <Transcript items={deferredTimeline} />
-                </Suspense>
-              </div>
-            </ScrollArea>
+            {deferredTimeline.length === 0 ? (
+              <EmptyChat
+                onPrompt={(text) => void sendMessage(text)}
+                onCapture={() => void captureScreenshot()}
+              />
+            ) : (
+              <ScrollArea className="scroll-mask min-h-0 flex-1" viewportRef={viewportRef}>
+                <div className="pb-6 pr-1.5">
+                  <Suspense fallback={<LazyFallback />}>
+                    <Transcript items={deferredTimeline} />
+                  </Suspense>
+                </div>
+              </ScrollArea>
+            )}
 
             <AnimatePresence>
               {runtimeWarning ? (
@@ -768,12 +814,14 @@ export default function App() {
               disabled={inputDisabled}
               recording={recorder.isRecording}
               busy={isBusy}
-              busyState={captureState}
-              attachedImage={attachedImage}
+              attachedImages={attachedImages}
+              voiceEnabled={VOICE_ENABLED}
               onChange={setInput}
               onSubmit={() => void sendMessage(input)}
               onToggleRecord={() => void toggleRecording()}
-              onRemoveImage={() => setAttachedImage(null)}
+              onRemoveImage={(index) =>
+                setAttachedImages((prev) => prev.filter((_, i) => i !== index))
+              }
             />
 
           </div>
@@ -793,49 +841,50 @@ const Composer = memo(
       disabled: boolean;
       recording: boolean;
       busy: boolean;
-      busyState: CaptureState;
-      attachedImage: string | null;
+      attachedImages: string[];
+      voiceEnabled: boolean;
       onChange: (v: string) => void;
       onSubmit: () => void;
       onToggleRecord: () => void;
-      onRemoveImage: () => void;
+      onRemoveImage: (index: number) => void;
     }) {
       const {
         value,
         disabled,
         recording,
         busy,
-        busyState,
-        attachedImage,
+        attachedImages,
+        voiceEnabled,
         onChange,
         onSubmit,
         onToggleRecord,
         onRemoveImage,
       } = props;
-      const canSend = (Boolean(value.trim()) || Boolean(attachedImage)) && !busy;
+      const canSend = (Boolean(value.trim()) || attachedImages.length > 0) && !busy;
       return (
         <div className="flex flex-col gap-2">
-          {attachedImage ? (
-            <div
-              className="flex items-center gap-2 self-start rounded-sm border border-hairline bg-canvas-soft p-1.5"
-              data-no-drag="true"
-            >
-              <img
-                src={attachedImage}
-                alt="Screenshot attachment"
-                className="h-12 w-20 rounded-xs border border-hairline object-cover"
-              />
-              <span className="font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
-                Screen
-              </span>
-              <button
-                type="button"
-                aria-label="Remove attachment"
-                onClick={onRemoveImage}
-                className="flex size-5 items-center justify-center rounded-pill text-foreground/60 transition hover:bg-white/6 hover:text-foreground"
-              >
-                <X className="size-3" />
-              </button>
+          {attachedImages.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5 self-start" data-no-drag="true">
+              {attachedImages.map((img, index) => (
+                <div
+                  key={`${index}-${img.slice(-16)}`}
+                  className="group relative overflow-hidden rounded-xs border border-hairline"
+                >
+                  <img
+                    src={img}
+                    alt={`Screen frame ${index + 1}`}
+                    className="h-12 w-20 object-cover"
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Remove frame ${index + 1}`}
+                    onClick={() => onRemoveImage(index)}
+                    className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-pill bg-black/70 text-foreground/80 transition hover:text-foreground"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </div>
+              ))}
             </div>
           ) : null}
           <div
@@ -869,25 +918,23 @@ const Composer = memo(
           <Button
             aria-label={recording ? "Stop recording" : "Hold to talk"}
             aria-pressed={recording}
+            disabled={!voiceEnabled}
             onClick={onToggleRecord}
             size="icon"
             variant="ghost"
+            title={voiceEnabled ? undefined : "Voice input unavailable"}
             className={cn(recording && "animate-pulse-ring text-destructive")}
           >
-            {busyState === "transcribing" || busyState === "streaming" ? (
-              <LoaderCircle className="animate-spin" />
-            ) : (
-              <Mic />
-            )}
+            {voiceEnabled ? <Mic /> : <MicOff />}
           </Button>
           <Button
-            aria-label="Send message"
+            aria-label={busy ? "Working" : "Send message"}
             disabled={!canSend}
             onClick={onSubmit}
             size="icon"
             variant={canSend ? "primary" : "outline"}
           >
-            <SendHorizonal />
+            {busy ? <LoaderCircle className="animate-spin" /> : <SendHorizonal />}
           </Button>
           </div>
         </div>
@@ -896,6 +943,62 @@ const Composer = memo(
     { displayName: "Composer" },
   ),
 );
+
+const EMPTY_CHAT_PROMPTS = [
+  "What can you help me with?",
+  "Summarize what's on my screen",
+  "Draft a short reply to a message",
+];
+
+function EmptyChat({
+  onPrompt,
+  onCapture,
+}: {
+  onPrompt: (text: string) => void;
+  onCapture: () => void;
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-8 text-center">
+      <AlmaAvatar size={52} glow />
+      <div className="flex flex-col gap-1.5">
+        <p className="font-sans text-[16px] text-foreground">How can I help?</p>
+        <p className="max-w-xs font-sans text-[13px] leading-5 text-muted-foreground">
+          Ask anything, or capture your screen to chat about what you see.
+        </p>
+      </div>
+      <div className="flex flex-col items-stretch gap-2">
+        {EMPTY_CHAT_PROMPTS.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            data-no-drag="true"
+            onClick={() => onPrompt(prompt)}
+            className={cn(
+              "rounded-pill border border-border bg-transparent px-4 py-1.5",
+              "font-sans text-[13px] text-foreground/85 transition-colors hover:bg-white/4",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            {prompt}
+          </button>
+        ))}
+        <button
+          type="button"
+          data-no-drag="true"
+          onClick={onCapture}
+          className={cn(
+            "mt-1 inline-flex items-center justify-center gap-2 rounded-pill px-4 py-1.5",
+            "font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground",
+            "transition-colors hover:text-foreground",
+          )}
+        >
+          <MonitorPlay className="size-3.5" />
+          Capture screen
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function ShortcutAction({
   label,

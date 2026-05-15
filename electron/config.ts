@@ -11,9 +11,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   VITE_LITELLM_BASE_URL: z.string().url().default("https://litellm.memfold.ai"),
   LITELLM_API_KEY: z.string().optional().default(""),
-  VITE_DEFAULT_CHAT_MODEL: z.string().min(1).default("gpt-4o-mini"),
-  VITE_DEFAULT_TRANSCRIBE_MODEL: z.string().min(1).default("gpt-4o-mini-transcribe"),
-  VITE_DEFAULT_TTS_MODEL: z.string().min(1).default("gpt-4o-mini-tts"),
+  VITE_DEFAULT_CHAT_MODEL: z.string().min(1).default("claude-sonnet-4-6"),
+  VITE_DEFAULT_TRANSCRIBE_MODEL: z.string().min(1).default("whisper-1"),
+  VITE_DEFAULT_TTS_MODEL: z.string().min(1).default("tts-1"),
   VITE_DEFAULT_TTS_VOICE: z.string().min(1).default("alloy"),
   VITE_ENABLE_AUTO_UPDATE: z
     .string()
