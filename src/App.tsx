@@ -80,6 +80,12 @@ const VOICE_ENABLED = false;
 const SESSION_FRAME_COUNT = 5;
 const SESSION_FRAME_INTERVAL_MS = 2000;
 
+const MEETING_PROMPT = {
+  title: "Start Alma Notes",
+  description: "Take notes & get suggestions in real time",
+  actionLabel: "Take Notes",
+};
+
 // Models that cannot serve /v1/chat/completions — image generation, embeddings,
 // realtime audio, speech. Excluded from the chat picker and fallback selection.
 const NON_CHAT_MODEL = /imagen|image-preview|image-generate|embedding|realtime|tts|whisper/i;
@@ -618,7 +624,7 @@ export default function App() {
                 onOpenChat={() => setWindowMode("expanded")}
                 onVoice={() => void startVoice()}
                 onScreenShare={() => void runCaptureSession()}
-                onNotes={() => void window.almanac?.notesShow()}
+                onNotes={() => void window.almanac?.showNotification(MEETING_PROMPT)}
                 voiceEnabled={VOICE_ENABLED}
                 modKey={modKey}
               />
