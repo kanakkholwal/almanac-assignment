@@ -12,18 +12,16 @@ import type { WindowMode, WindowState } from "../shared/ipc";
 
 import type { PersistedWindowState } from "./window-state";
 
-// Each window mode maps to a real OS window size. Orb and compact share one
-// size: the renderer morphs the launcher card in place (orb circle ↔ compact
-// card) inside this window, so hovering never triggers an OS-level resize or
-// window swap — no flicker. Only the launcher↔expanded jump resizes the OS
-// window.
+// The main window is a single fixed-size, transparent stage — it is never
+// resized. The renderer morphs one surface (orb ↔ compact ↔ chat) inside it and
+// forwards the mouse through the transparent regions, so switching modes never
+// triggers an OS-level window resize and therefore never flickers.
+const STAGE = { width: 768, height: 568 } as const;
 export const CARD_SIZES: Record<WindowMode, { width: number; height: number }> = {
-  // The orb is the idle launcher: a small circular widget centred in the
-  // (transparent) compact-sized window so it can spring open without a resize.
-  orb: { width: 232, height: 188 },
-  compact: { width: 232, height: 188 },
-  notes: { width: 232, height: 188 },
-  expanded: { width: 768, height: 568 },
+  orb: STAGE,
+  compact: STAGE,
+  notes: STAGE,
+  expanded: STAGE,
 };
 
 function resolveRendererUrl(): string {

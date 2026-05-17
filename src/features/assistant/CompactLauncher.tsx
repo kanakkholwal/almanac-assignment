@@ -1,7 +1,5 @@
 import {
-  Camera,
   Maximize2,
-  MessageSquareText,
   Mic,
   MicOff,
   MonitorPlay,
@@ -52,28 +50,18 @@ export function CompactLauncher({
   ];
 
   return (
-    // The morphing surface (see Launcher) owns the open/close animation, so
-    // this just fills the card.
+    // Everything is a single centred stack — the shortcut rows and the action
+    // cluster sit close together rather than pinned to opposite edges.
     <div
       data-drag-region="true"
-      className="flex h-full w-full flex-col justify-between gap-3 p-4"
+      className="flex h-full w-full flex-col items-center justify-center gap-2.5 p-2"
     >
-      <div className="flex flex-col gap-2.5">
-        <ShortcutRow
-          icon={MessageSquareText}
-          label="Ask Alma"
-          keys={[modKey, "↵"]}
-          onClick={onOpenChat}
-        />
-        <ShortcutRow
-          icon={Camera}
-          label="Capture"
-          keys={[modKey, "S"]}
-          onClick={onCapture}
-        />
+      <div className="flex flex-col items-center gap-1">
+        <ShortcutRow label="Ask Alma" keys={[modKey, "↵"]} onClick={onOpenChat} />
+        <ShortcutRow label="Capture" keys={[modKey, "S"]} onClick={onCapture} />
       </div>
 
-      <div className="flex items-center justify-around gap-2" data-no-drag="true">
+      <div className="flex items-center justify-center gap-2" data-no-drag="true">
         {tools.map(({ label, icon: Icon, onClick, disabled }) => (
           <Button
             key={label}
@@ -93,12 +81,10 @@ export function CompactLauncher({
 }
 
 function ShortcutRow({
-  icon: Icon,
   label,
   keys,
   onClick,
 }: {
-  icon: LucideIcon;
   label: string;
   keys: string[];
   onClick: () => void;
@@ -109,15 +95,12 @@ function ShortcutRow({
       data-no-drag="true"
       onClick={onClick}
       className={cn(
-        "group flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left",
+        "flex items-center justify-center gap-2.5 rounded-md px-3 py-1.5",
         "transition-colors hover:bg-hover",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       )}
     >
-      <span className="flex items-center gap-2">
-        <Icon className="size-3.5 text-muted-foreground transition-colors group-hover:text-foreground" />
-        <span className="font-sans text-[14px] text-foreground">{label}</span>
-      </span>
+      <span className="font-sans text-[14px] text-foreground">{label}</span>
       <span className="flex items-center gap-1">
         {keys.map((k) => (
           <Kbd key={k}>{k}</Kbd>

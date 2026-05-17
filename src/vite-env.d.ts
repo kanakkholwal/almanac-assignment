@@ -32,6 +32,7 @@ declare global {
       toggleMaximizeWindow: () => Promise<void>;
       closeWindow: () => Promise<void>;
       getWindowState: () => Promise<WindowState>;
+      setMouseIgnore: (ignore: boolean) => Promise<void>;
       getRuntimeInfo: () => Promise<AppRuntimeInfo>;
       fetchModels: (force?: boolean) => Promise<ModelOption[]>;
       startChatCompletion: (request: ChatCompletionRequest) => Promise<void>;

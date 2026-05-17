@@ -494,6 +494,12 @@ function registerIpc() {
     return getWindowState(mainWindow, windowMode, alwaysOnTop);
   });
 
+  ipcMain.handle(IPC_CHANNELS.windowSetIgnoreMouse, async (_event, ignore: unknown) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (ignore) mainWindow.setIgnoreMouseEvents(true, { forward: true });
+    else mainWindow.setIgnoreMouseEvents(false);
+  });
+
   ipcMain.handle(IPC_CHANNELS.appGetInfo, async () => getRuntimeInfo());
 
   ipcMain.handle(IPC_CHANNELS.fetchModels, async (_event, force?: unknown) =>

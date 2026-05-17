@@ -8,6 +8,7 @@ export const IPC_CHANNELS = {
   windowMaximizeToggle: "window:maximize-toggle",
   windowClose: "window:close",
   windowGetState: "window:get-state",
+  windowSetIgnoreMouse: "window:set-ignore-mouse",
   appGetInfo: "app:get-info",
   fetchModels: "assistant:fetch-models",
   startChatCompletion: "assistant:start-chat-completion",

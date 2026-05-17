@@ -57,6 +57,10 @@ const api = {
   closeWindow: () => invoke<void>(IPC_CHANNELS.windowClose),
   getWindowState: async () =>
     windowStateSchema.parse(await invoke<WindowState>(IPC_CHANNELS.windowGetState)),
+  // Forward clicks through the transparent regions of the (fixed-size) window
+  // so only the visible surface captures the mouse.
+  setMouseIgnore: (ignore: boolean) =>
+    invoke<void>(IPC_CHANNELS.windowSetIgnoreMouse, Boolean(ignore)),
 
   getRuntimeInfo: async () =>
     appRuntimeInfoSchema.parse(await invoke<AppRuntimeInfo>(IPC_CHANNELS.appGetInfo)),

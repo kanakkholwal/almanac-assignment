@@ -69,13 +69,13 @@ const Transcript = lazy(async () =>
   import("@/features/assistant/Transcript").then((m) => ({ default: m.Transcript })),
 );
 
-// The whole UI is one surface that morphs between three sizes. Diameters mirror
-// CARD_SIZES in electron/window.ts so the surface always matches its window.
+// The window is a single fixed stage (see CARD_SIZES in electron/window.ts);
+// this surface morphs between three sizes inside it — no OS resize, no flicker.
 const ORB_SIZE = 56;
 const SURFACE_SIZE: Record<WindowMode, { w: number; h: number }> = {
   orb: { w: ORB_SIZE, h: ORB_SIZE },
-  compact: { w: 232, h: 188 },
-  notes: { w: 232, h: 188 },
+  compact: { w: 232, h: 134 },
+  notes: { w: 232, h: 134 },
   expanded: { w: 768, h: 568 },
 };
 
@@ -238,6 +238,7 @@ export default function App() {
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(() => formatClock());
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const backdropRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<TimelineItem[]>(timeline);
   const speechEnabledRef = useRef(false);
   const hasBootstrappedRef = useRef(false);
@@ -422,13 +423,28 @@ export default function App() {
     };
   }, []);
 
-  // Grow the OS window the instant we enter chat so the morphing surface has
-  // room to expand into. Shrinking back is deferred to the surface's
-  // onAnimationComplete (below) so it is never clipped mid-collapse.
+  // The window is a fixed full-size, transparent stage. Forward the mouse
+  // through its transparent regions so clicks reach whatever is behind Almanac,
+  // and only capture them while the pointer is over the surface (or a popover
+  // portalled out of it). Pointer-move events keep arriving even while
+  // click-through is on (`forward: true`), so re-entry is always detected.
   useEffect(() => {
-    if (!hasBootstrappedRef.current) return;
-    if (windowMode === "expanded") void window.almanac?.setWindowMode("expanded");
-  }, [windowMode]);
+    let ignoring: boolean | null = null;
+    const apply = (ignore: boolean) => {
+      if (ignore === ignoring) return;
+      ignoring = ignore;
+      void window.almanac?.setMouseIgnore(ignore);
+    };
+    apply(true);
+    const onMove = (event: MouseEvent) => {
+      apply(event.target === backdropRef.current);
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      void window.almanac?.setMouseIgnore(false);
+    };
+  }, []);
 
   const messageHistory = useMemo(
     () =>
@@ -655,10 +671,13 @@ export default function App() {
   // One persistent, top-anchored surface holds every mode. It morphs its own
   // size between the orb, the compact launcher and the full chat — the three
   // faces below cross-fade inside it — so chat never feels like a separate
-  // window. The window grows the moment we enter chat (so the surface has room
-  // to expand into) and only shrinks back once the collapse morph finishes.
+  // window. The OS window is a fixed, transparent stage that never resizes;
+  // only this surface morphs, so mode changes never flicker.
   return (
-    <div className="fixed inset-0 flex items-start justify-center glass-body">
+    <div
+      ref={backdropRef}
+      className="fixed inset-0 flex items-start justify-center glass-body"
+    >
       <motion.div
         className="launcher-surface relative overflow-hidden"
         initial={false}
@@ -668,11 +687,6 @@ export default function App() {
           borderRadius: windowMode === "orb" ? ORB_SIZE / 2 : 16,
         }}
         transition={MORPH}
-        onAnimationComplete={() => {
-          if (windowMode !== "expanded") {
-            void window.almanac?.setWindowMode(windowMode);
-          }
-        }}
       >
         {/* Orb face — click to spring open into the compact launcher. */}
         <motion.div
