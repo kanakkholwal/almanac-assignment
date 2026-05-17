@@ -91,7 +91,7 @@ function ControlButton({
     <button
       className={cn(
         "flex size-7 items-center justify-center rounded-md text-foreground/70 transition-colors",
-        "hover:bg-white/[0.08] hover:text-foreground",
+        "hover:bg-hover hover:text-foreground",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         className,
       )}

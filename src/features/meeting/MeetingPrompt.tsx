@@ -69,8 +69,8 @@ export function MeetingPrompt({ prompt, onStart, onDismiss }: MeetingPromptProps
                   onClick={onStart}
                   className={cn(
                     "px-4 font-sans text-[13px] text-foreground transition-colors",
-                    "hover:bg-white/4",
-                    "focus-visible:outline-none focus-visible:bg-white/4",
+                    "hover:bg-hover",
+                    "focus-visible:outline-none focus-visible:bg-hover",
                   )}
                 >
                   {prompt.actionLabel}
@@ -82,8 +82,8 @@ export function MeetingPrompt({ prompt, onStart, onDismiss }: MeetingPromptProps
                   onClick={() => setMenuOpen((v) => !v)}
                   className={cn(
                     "flex w-8 items-center justify-center text-foreground/70 transition-colors",
-                    "hover:bg-white/4 hover:text-foreground",
-                    "focus-visible:outline-none focus-visible:bg-white/4",
+                    "hover:bg-hover hover:text-foreground",
+                    "focus-visible:outline-none focus-visible:bg-hover",
                   )}
                 >
                   <ChevronUp
@@ -137,8 +137,8 @@ function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
       onClick={onClick}
       className={cn(
         "block w-full px-4 py-2.5 text-left font-sans text-[13px] text-foreground transition-colors",
-        "hover:bg-white/4",
-        "focus-visible:outline-none focus-visible:bg-white/4",
+        "hover:bg-hover",
+        "focus-visible:outline-none focus-visible:bg-hover",
       )}
     >
       {label}

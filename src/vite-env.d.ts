@@ -9,6 +9,8 @@ import type {
   ModelOption,
   SpeechPayload,
   StreamEventPayload,
+  ThemeInfo,
+  ThemeSource,
   WindowMode,
   WindowState,
 } from "@shared/ipc";
@@ -48,6 +50,8 @@ declare global {
       notesStop: () => Promise<void>;
       notesOpenChat: () => Promise<void>;
       captureScreen: () => Promise<CaptureResult>;
+      getTheme: () => Promise<ThemeInfo>;
+      setTheme: (source: ThemeSource) => Promise<ThemeInfo>;
       onAssistantStream: (listener: (payload: StreamEventPayload) => void) => () => void;
       onAppEvent: (listener: (payload: AppEvent) => void) => () => void;
       onNotificationData: (listener: (payload: NotificationPayload) => void) => () => void;

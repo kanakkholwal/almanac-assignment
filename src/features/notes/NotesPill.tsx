@@ -45,7 +45,7 @@ export function NotesPill({ recording = false, onStop, onOpenChat }: NotesPillPr
             className={cn(
               "my-3 flex size-10 items-center justify-center rounded-sm",
               "bg-primary text-primary-foreground",
-              "transition-colors hover:bg-white/90",
+              "transition-opacity hover:opacity-90",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
             )}
           >

@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { CheckCheck, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { Streamdown } from "streamdown";
 
 import type { TimelineItem } from "@shared/ipc";
@@ -94,14 +94,14 @@ function UserMessage({
   return (
     <div className="flex flex-col items-end">
       {imageUrls && imageUrls.length > 0 ? (
-        <div className="mb-1.5 flex max-w-[78%] flex-wrap justify-end gap-1.5">
+        <div className="mb-1.5 flex max-w-[80%] flex-wrap justify-end gap-1.5">
           {imageUrls.map((url, index) => (
             <img
               key={`${index}-${url.slice(-16)}`}
               src={url}
               alt={`Captured screen ${index + 1}`}
               className={cn(
-                "rounded-sm border border-hairline object-cover",
+                "rounded-lg border border-hairline object-cover",
                 imageUrls.length > 1 ? "h-20 w-32" : "max-w-full",
               )}
             />
@@ -111,20 +111,19 @@ function UserMessage({
       {content ? (
         <div
           className={cn(
-            "max-w-[78%] rounded-sm border border-hairline bg-canvas-soft px-3.5 py-2",
-            "font-sans text-[14px] leading-6 text-foreground",
+            "glass-bubble max-w-[80%] rounded-2xl px-4 py-2.5",
+            "font-sans text-[14px] leading-6 text-foreground wrap-break-word",
           )}
         >
           {renderContent(content)}
         </div>
       ) : null}
       {status === "read" ? (
-        <div className="mt-1 flex items-center gap-1 pr-1 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
-          <CheckCheck className="size-3 text-foreground/70" />
-          <span>Read</span>
+        <div className="mt-1 pr-1 font-sans text-[11px] font-medium text-link">
+          Read
         </div>
       ) : status ? (
-        <div className="mt-1 pr-1 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
+        <div className="mt-1 pr-1 font-sans text-[11px] capitalize text-muted-foreground">
           {status}
         </div>
       ) : null}
@@ -160,7 +159,7 @@ function AssistantMessage({ content }: { content: string }) {
 function ThreadMessage({ label, preview }: { label: string; preview: string }) {
   return (
     <div className="flex flex-col items-end gap-1">
-      <div className="max-w-[78%] rounded-sm border border-hairline bg-canvas-soft px-3.5 py-2 font-sans text-[13.5px] leading-6 text-foreground/85">
+      <div className="glass-bubble max-w-[80%] rounded-2xl px-4 py-2.5 font-sans text-[13.5px] leading-6 text-foreground/85">
         {preview}
       </div>
       <div className="pr-1 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
@@ -182,7 +181,7 @@ function Suggestion({
   secondaryLabel?: string;
 }) {
   return (
-    <div className="max-w-[82%] rounded-sm border border-hairline bg-canvas-card p-4">
+    <div className="glass-bubble max-w-[84%] rounded-xl p-4">
       <div className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-eyebrow text-muted-foreground">
         <FileText className="size-3 text-foreground/70" />
         {title}

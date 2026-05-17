@@ -25,6 +25,8 @@ export const IPC_CHANNELS = {
   notesStop: "notes:stop",
   notesOpenChat: "notes:open-chat",
   captureScreen: "capture:screen",
+  themeGet: "theme:get",
+  themeSet: "theme:set",
 } as const;
 
 export const captureResultSchema = z.object({
@@ -36,6 +38,17 @@ export type CaptureResult = z.infer<typeof captureResultSchema>;
 
 export const windowModeSchema = z.enum(["compact", "notes", "expanded"]);
 export type WindowMode = z.infer<typeof windowModeSchema>;
+
+// Theme follows the OS by default ("system"); the user can pin light or dark
+// from the in-app settings menu. `shouldUseDarkColors` is the resolved value.
+export const themeSourceSchema = z.enum(["system", "light", "dark"]);
+export type ThemeSource = z.infer<typeof themeSourceSchema>;
+
+export const themeInfoSchema = z.object({
+  source: themeSourceSchema,
+  shouldUseDarkColors: z.boolean(),
+});
+export type ThemeInfo = z.infer<typeof themeInfoSchema>;
 
 export const modelOptionSchema = z.object({
   id: z.string().min(1),
@@ -199,6 +212,10 @@ export const appEventSchema = z.discriminatedUnion("type", [
     type: z.literal("update-status"),
     status: z.enum(["idle", "checking", "available", "not-available", "downloaded", "error"]),
     detail: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("theme"),
+    theme: themeInfoSchema,
   }),
 ]);
 export type AppEvent = z.infer<typeof appEventSchema>;

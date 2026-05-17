@@ -1,21 +1,25 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertCircle,
-  ArrowLeft,
+  ArrowUp,
+  Check,
   CheckCircle2,
   HeadphoneOff,
   Headphones,
   LoaderCircle,
   Mic,
-  MicOff,
   Minimize2,
+  Monitor,
   MonitorPlay,
+  Moon,
   Pin,
-  SendHorizonal,
+  Settings,
   Square,
+  Sun,
   Trash2,
   TriangleAlert,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import {
   Suspense,
@@ -35,6 +39,7 @@ import type {
   CaptureState,
   ChatContentPart,
   ModelOption,
+  ThemeSource,
   TimelineItem,
   WindowMode,
 } from "@shared/ipc";
@@ -192,7 +197,7 @@ function Banner({
         <button
           aria-label="Dismiss"
           onClick={onDismiss}
-          className="-mr-1 flex size-5 items-center justify-center rounded-pill text-foreground/60 transition hover:bg-white/6 hover:text-foreground"
+          className="-mr-1 flex size-5 items-center justify-center rounded-pill text-foreground/60 transition hover:bg-hover hover:text-foreground"
         >
           <X className="size-3" />
         </button>
@@ -211,6 +216,7 @@ export default function App() {
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [speechEnabled, setSpeechEnabled] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
+  const [themeSource, setThemeSource] = useState<ThemeSource>("system");
   const [error, setError] = useState<string | null>(null);
   const [runtimeWarning, setRuntimeWarning] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<string | null>(null);
@@ -249,6 +255,26 @@ export default function App() {
     }
   }, [timeline]);
 
+  // Resolved light/dark drives [data-theme] on <html>; platform attributes
+  // tell the CSS whether the OS supplies the blur (acrylic / vibrancy).
+  const applyResolvedTheme = useCallback(
+    (info: { source: ThemeSource; shouldUseDarkColors: boolean }) => {
+      setThemeSource(info.source);
+      document.documentElement.dataset.theme = info.shouldUseDarkColors
+        ? "dark"
+        : "light";
+    },
+    [],
+  );
+
+  const changeTheme = useCallback(
+    async (source: ThemeSource) => {
+      const info = await window.almanac?.setTheme(source);
+      if (info) applyResolvedTheme(info);
+    },
+    [applyResolvedTheme],
+  );
+
   useEffect(() => {
     let active = true;
     const almanac = window.almanac;
@@ -261,14 +287,19 @@ export default function App() {
       almanac.getRuntimeInfo(),
       almanac.getWindowState(),
       almanac.fetchModels().catch(() => [] as ModelOption[]),
+      almanac.getTheme().catch(() => null),
     ])
-      .then(([runtime, state, available]) => {
+      .then(([runtime, state, available, theme]) => {
         if (!active) return;
         setRuntimeInfo(runtime);
         setWindowMode(state.mode);
         setAlwaysOnTop(state.alwaysOnTop);
         setModels(available);
         setSelectedModel(pickChatModel(available, runtime.config.defaultChatModel));
+        const root = document.documentElement;
+        root.dataset.platform = runtime.platform;
+        root.dataset.nativeBlur = runtime.platform === "linux" ? "false" : "true";
+        if (theme) applyResolvedTheme(theme);
         hasBootstrappedRef.current = true;
       })
       .catch((fetchError) => {
@@ -343,6 +374,7 @@ export default function App() {
         setWindowMode(event.state.mode);
         setAlwaysOnTop(event.state.alwaysOnTop);
       }
+      if (event.type === "theme") applyResolvedTheme(event.theme);
       if (event.type === "runtime-warning") setRuntimeWarning(event.message);
       if (event.type === "update-status") {
         setUpdateStatus(
@@ -585,29 +617,10 @@ export default function App() {
   const isBusy = captureState === "streaming" || captureState === "transcribing";
   const inputDisabled = isBusy;
 
-  const morphTransition = { type: "spring" as const, stiffness: 320, damping: 34 };
-
-  const CARD_SIZES: Record<WindowMode, { width: number; height: number }> = {
-    compact: { width: 220, height: 176 },
-    notes: { width: 220, height: 176 },
-    expanded: { width: 760, height: 560 },
-  };
-  const cardSize = CARD_SIZES[windowMode];
-  const isExpanded = windowMode === "expanded";
-
+  // The OS window is resized to each mode's card by the main process, so the
+  // renderer just fills it; AnimatePresence cross-fades the two layouts.
   return (
-    <div
-      className={cn(
-        "fixed inset-0 flex justify-center",
-        isExpanded ? "items-center" : "items-start pt-2",
-      )}
-    >
-      <motion.div
-        animate={{ width: cardSize.width, height: cardSize.height }}
-        initial={false}
-        transition={morphTransition}
-        style={{ width: cardSize.width, height: cardSize.height }}
-      >
+    <div className="fixed inset-0">
       <AnimatePresence mode="popLayout" initial={false}>
         {windowMode === "compact" ? (
           <motion.div
@@ -637,23 +650,30 @@ export default function App() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.14 }}
-            className="surface-card relative flex h-full w-full flex-col overflow-hidden rounded-sm"
+            className="relative flex h-full w-full flex-col overflow-hidden"
           >
         <header
           data-drag-region="true"
-          className="flex justify-between items-center gap-3 border-b border-hairline px-4 py-3"
+          className="flex items-center justify-between gap-2 border-b border-hairline px-2.5 py-2"
         >
-          <div className="flex items-center" data-no-drag="true">
-            <Button
-              aria-label="Back to launcher"
-              onClick={collapseToCompact}
-              size="icon-sm"
-              variant="outline"
-              title="Back"
-            >
-              <ArrowLeft />
-            </Button>
-          </div>
+          <button
+            type="button"
+            data-no-drag="true"
+            onClick={collapseToCompact}
+            title="Back to launcher"
+            className={cn(
+              "flex items-center gap-2 rounded-pill px-2 py-1 transition-colors",
+              "hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            <span className="font-sans text-[13px] font-medium text-foreground">
+              Ask Alma
+            </span>
+            <span className="flex items-center gap-1">
+              <Kbd>{modKey}</Kbd>
+              <Kbd>↵</Kbd>
+            </span>
+          </button>
 
           <div className="flex items-center justify-center" data-no-drag="true">
             <ShortcutAction
@@ -663,7 +683,7 @@ export default function App() {
             />
           </div>
 
-          <div className="flex items-center justify-end gap-1.5" data-no-drag="true">
+          <div className="flex items-center justify-end gap-0.5" data-no-drag="true">
             <Button
               aria-label="Toggle voice output"
               aria-pressed={speechEnabled}
@@ -688,29 +708,17 @@ export default function App() {
             >
               <MonitorPlay />
             </Button>
-            <Button
-              aria-label="Clear chat"
-              onClick={clearChat}
-              size="icon-sm"
-              variant="ghost"
-              title="Clear chat"
-            >
-              <Trash2 />
-            </Button>
-            <Button
-              aria-label={alwaysOnTop ? "Disable always on top" : "Enable always on top"}
-              aria-pressed={alwaysOnTop}
-              onClick={() => {
+            <SettingsMenu
+              themeSource={themeSource}
+              onThemeChange={(source) => void changeTheme(source)}
+              alwaysOnTop={alwaysOnTop}
+              onToggleAlwaysOnTop={() => {
                 const next = !alwaysOnTop;
                 setAlwaysOnTop(next);
                 void window.almanac?.setAlwaysOnTop(next);
               }}
-              size="icon-sm"
-              variant={alwaysOnTop ? "outline" : "ghost"}
-              title="Always on top"
-            >
-              <Pin />
-            </Button>
+              onClearChat={clearChat}
+            />
             <Button
               aria-label="Collapse to launcher"
               onClick={collapseToCompact}
@@ -736,7 +744,7 @@ export default function App() {
                   className={cn(
                     "max-w-50 cursor-pointer rounded-pill border border-border bg-transparent px-2.5 py-0.5",
                     "font-mono text-[10px] uppercase tracking-eyebrow text-foreground/85 outline-none",
-                    "transition-colors hover:bg-white/4 focus-visible:border-white/30",
+                    "transition-colors hover:bg-hover focus-visible:border-ring",
                   )}
                 >
                   {chatModels(models).map((model) => (
@@ -754,7 +762,7 @@ export default function App() {
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-pill border border-border bg-transparent px-2.5 py-0.5",
                     "font-mono text-[10px] uppercase tracking-eyebrow text-foreground/85",
-                    "transition-colors hover:bg-white/4",
+                    "transition-colors hover:bg-hover",
                   )}
                 >
                   <span className="size-1.5 animate-pulse rounded-pill bg-accent" />
@@ -836,7 +844,6 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
-      </motion.div>
     </div>
   );
 }
@@ -896,8 +903,8 @@ const Composer = memo(
           ) : null}
           <div
             className={cn(
-              "relative flex items-center gap-1 rounded-pill border border-border bg-transparent py-1 pl-5 pr-1",
-              "transition-colors focus-within:border-white/30",
+              "relative flex items-center gap-1 rounded-pill border border-border bg-input py-1 pl-5 pr-1",
+              "transition-colors focus-within:border-ring",
             )}
           >
           <textarea
@@ -907,7 +914,7 @@ const Composer = memo(
             maxLength={2000}
             rows={1}
             value={value}
-            placeholder="Type your message"
+            placeholder="Type your message…"
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -922,26 +929,26 @@ const Composer = memo(
               "disabled:cursor-not-allowed disabled:opacity-60",
             )}
           />
-          <Button
-            aria-label={recording ? "Stop recording" : "Hold to talk"}
-            aria-pressed={recording}
-            disabled={!voiceEnabled}
-            onClick={onToggleRecord}
-            size="icon"
-            variant="ghost"
-            title={voiceEnabled ? undefined : "Voice input unavailable"}
-            className={cn(recording && "animate-pulse-ring text-destructive")}
-          >
-            {voiceEnabled ? <Mic /> : <MicOff />}
-          </Button>
+          {voiceEnabled ? (
+            <Button
+              aria-label={recording ? "Stop recording" : "Hold to talk"}
+              aria-pressed={recording}
+              onClick={onToggleRecord}
+              size="icon"
+              variant="ghost"
+              className={cn(recording && "animate-pulse-ring text-destructive")}
+            >
+              <Mic />
+            </Button>
+          ) : null}
           <Button
             aria-label={busy ? "Working" : "Send message"}
             disabled={!canSend}
             onClick={onSubmit}
             size="icon"
-            variant={canSend ? "primary" : "outline"}
+            variant={canSend ? "accent" : "outline"}
           >
-            {busy ? <LoaderCircle className="animate-spin" /> : <SendHorizonal />}
+            {busy ? <LoaderCircle className="animate-spin" /> : <ArrowUp />}
           </Button>
           </div>
         </div>
@@ -982,7 +989,7 @@ function EmptyChat({
             onClick={() => onPrompt(prompt)}
             className={cn(
               "rounded-pill border border-border bg-transparent px-4 py-1.5",
-              "font-sans text-[13px] text-foreground/85 transition-colors hover:bg-white/4",
+              "font-sans text-[13px] text-foreground/85 transition-colors hover:bg-hover",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             )}
           >
@@ -1024,7 +1031,7 @@ function ShortcutAction({
       className={cn(
         "inline-flex items-center gap-2 rounded-pill border border-border bg-transparent px-3 py-1.5",
         "font-sans text-[13px] text-foreground transition-colors",
-        "hover:bg-white/4",
+        "hover:bg-hover",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
       )}
     >
@@ -1048,5 +1055,134 @@ function StatusPill({ children }: { children: React.ReactNode }) {
     >
       {children}
     </span>
+  );
+}
+
+const THEME_OPTIONS: { value: ThemeSource; label: string; icon: LucideIcon }[] = [
+  { value: "system", label: "System", icon: Monitor },
+  { value: "light", label: "Light", icon: Sun },
+  { value: "dark", label: "Dark", icon: Moon },
+];
+
+function SettingsMenu({
+  themeSource,
+  onThemeChange,
+  alwaysOnTop,
+  onToggleAlwaysOnTop,
+  onClearChat,
+}: {
+  themeSource: ThemeSource;
+  onThemeChange: (source: ThemeSource) => void;
+  alwaysOnTop: boolean;
+  onToggleAlwaysOnTop: () => void;
+  onClearChat: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative" data-no-drag="true">
+      <Button
+        aria-label="Settings"
+        aria-pressed={open}
+        onClick={() => setOpen((v) => !v)}
+        size="icon-sm"
+        variant={open ? "outline" : "ghost"}
+        title="Settings"
+      >
+        <Settings />
+      </Button>
+      <AnimatePresence>
+        {open ? (
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -6, scale: 0.97 }}
+            transition={{ duration: 0.14, ease: "easeOut" }}
+            className="glass-popover absolute right-0 top-9 z-50 w-52 rounded-md p-2"
+          >
+            <p className="eyebrow px-1.5 pb-1.5">Appearance</p>
+            <div className="flex gap-1">
+              {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onThemeChange(value)}
+                  className={cn(
+                    "flex flex-1 flex-col items-center gap-1 rounded-sm border px-1 py-1.5",
+                    "transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    themeSource === value
+                      ? "border-border bg-hover text-foreground"
+                      : "border-transparent text-muted-foreground hover:bg-hover hover:text-foreground",
+                  )}
+                >
+                  <Icon className="size-4" />
+                  <span className="font-sans text-[11px]">{label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="my-1.5 h-px bg-hairline" />
+            <MenuRow onClick={onToggleAlwaysOnTop}>
+              <span className="flex items-center gap-2">
+                <Pin className="size-3.5" />
+                Always on top
+              </span>
+              {alwaysOnTop ? <Check className="size-3.5 text-foreground" /> : null}
+            </MenuRow>
+            <MenuRow
+              onClick={() => {
+                onClearChat();
+                setOpen(false);
+              }}
+            >
+              <span className="flex items-center gap-2 text-destructive">
+                <Trash2 className="size-3.5" />
+                Clear chat
+              </span>
+            </MenuRow>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function MenuRow({
+  onClick,
+  children,
+}: {
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center justify-between gap-2 rounded-sm px-1.5 py-1.5",
+        "font-sans text-[12.5px] text-foreground/90 transition-colors",
+        "hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      )}
+    >
+      {children}
+    </button>
   );
 }

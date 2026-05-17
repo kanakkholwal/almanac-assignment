@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { app, type Rectangle } from "electron";
 
-import type { WindowMode } from "../shared/ipc";
+import type { ThemeSource, WindowMode } from "../shared/ipc";
 
 import { logger, serializeError } from "./logger";
 
@@ -12,6 +12,7 @@ export interface PersistedWindowState {
   isMaximized: boolean;
   mode: WindowMode;
   alwaysOnTop: boolean;
+  themeSource: ThemeSource;
 }
 
 const DEFAULT_WINDOW_STATE: PersistedWindowState = {
@@ -19,6 +20,7 @@ const DEFAULT_WINDOW_STATE: PersistedWindowState = {
   isMaximized: false,
   mode: "compact",
   alwaysOnTop: true,
+  themeSource: "system",
 };
 
 function getWindowStatePath(): string {

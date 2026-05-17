@@ -59,7 +59,7 @@ export function CompactLauncher({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.14 }}
-      className="surface-card flex h-full w-full flex-col justify-between gap-3 rounded-sm p-4"
+      className="flex h-full w-full flex-col justify-between gap-3 p-4"
     >
       <div className="flex flex-col gap-2.5">
         <ShortcutRow
@@ -112,8 +112,8 @@ function ShortcutRow({
       data-no-drag="true"
       onClick={onClick}
       className={cn(
-        "group flex items-center justify-between gap-3 rounded-sm px-1 py-1 text-left",
-        "transition-colors hover:bg-white/3",
+        "group flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left",
+        "transition-colors hover:bg-hover",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       )}
     >

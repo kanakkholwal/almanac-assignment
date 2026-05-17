@@ -20,9 +20,12 @@ import {
   chatCompletionRequestSchema,
   IPC_CHANNELS,
   mockMeetingEventSchema,
+  themeSourceSchema,
   windowModeSchema,
   type AppEvent,
   type MockMeetingEvent,
+  type ThemeInfo,
+  type ThemeSource,
   type WindowMode,
 } from "../shared/ipc";
 
@@ -42,6 +45,7 @@ import {
   createMainWindow,
   getAppIcon,
   getWindowState,
+  glassWindowOptions,
 } from "./window";
 import { readWindowState, writeWindowState } from "./window-state";
 
@@ -55,6 +59,7 @@ let notesWindow: BrowserWindowType | null = null;
 let tray: Tray | null = null;
 let windowMode: WindowMode = "compact";
 let alwaysOnTop = true;
+let themeSource: ThemeSource = "system";
 let isQuitting = false;
 
 const NOTIFICATION_SIZE = { width: 540, height: 200 } as const;
@@ -83,7 +88,12 @@ function persistWindowState() {
     isMaximized: mainWindow.isMaximized(),
     mode: windowMode,
     alwaysOnTop,
+    themeSource,
   });
+}
+
+function currentThemeInfo(): ThemeInfo {
+  return { source: themeSource, shouldUseDarkColors: nativeTheme.shouldUseDarkColors };
 }
 
 function syncWindowState() {
@@ -247,6 +257,8 @@ function createWindow() {
   saved.isMaximized = false;
   windowMode = saved.mode;
   alwaysOnTop = saved.alwaysOnTop;
+  themeSource = saved.themeSource ?? "system";
+  nativeTheme.themeSource = themeSource;
   mainWindow = createMainWindow(saved);
   attachWindowLifecycle(mainWindow);
   syncWindowState();
@@ -291,18 +303,15 @@ function createNotificationWindow(payload: NotificationPayload | null) {
     x,
     y,
     frame: false,
-    transparent: true,
     resizable: false,
     movable: true,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    hasShadow: false,
-    roundedCorners: false,
     skipTaskbar: true,
     focusable: true,
     alwaysOnTop: true,
-    ...(isWin ? { backgroundMaterial: "none" as const } : {}),
+    ...glassWindowOptions(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -365,18 +374,15 @@ function createNotesWindow() {
     x,
     y,
     frame: false,
-    transparent: true,
     resizable: false,
     movable: true,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
-    hasShadow: false,
-    roundedCorners: false,
     skipTaskbar: true,
     focusable: true,
     alwaysOnTop: true,
-    ...(isWin ? { backgroundMaterial: "none" as const } : {}),
+    ...glassWindowOptions(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -568,6 +574,15 @@ function registerIpc() {
       mainWindow.focus();
     }
   });
+
+  ipcMain.handle(IPC_CHANNELS.themeGet, async () => currentThemeInfo());
+
+  ipcMain.handle(IPC_CHANNELS.themeSet, async (_event, input: unknown) => {
+    themeSource = themeSourceSchema.parse(input);
+    nativeTheme.themeSource = themeSource;
+    persistWindowState();
+    return currentThemeInfo();
+  });
 }
 
 async function bootstrap() {
@@ -580,9 +595,14 @@ async function bootstrap() {
 
   await app.whenReady();
 
-  nativeTheme.themeSource = "dark";
   buildApplicationMenu();
   createWindow();
+
+  // Broadcast OS-level light/dark changes so the renderer can re-theme live
+  // while the user keeps the "system" preference.
+  nativeTheme.on("updated", () => {
+    sendAppEvent({ type: "theme", theme: currentThemeInfo() });
+  });
 
   tray = new Tray(getAppIcon());
   tray.setToolTip("Almanac");

@@ -9,6 +9,8 @@ import type {
   ModelOption,
   SpeechPayload,
   StreamEventPayload,
+  ThemeInfo,
+  ThemeSource,
   WindowMode,
   WindowState,
 } from "../shared/ipc";
@@ -22,6 +24,8 @@ import {
   modelOptionSchema,
   speechPayloadSchema,
   streamEventPayloadSchema,
+  themeInfoSchema,
+  themeSourceSchema,
   windowModeSchema,
   windowStateSchema,
 } from "../shared/ipc";
@@ -89,6 +93,13 @@ const api = {
 
   captureScreen: async () =>
     captureResultSchema.parse(await invoke<CaptureResult>(IPC_CHANNELS.captureScreen)),
+
+  getTheme: async () =>
+    themeInfoSchema.parse(await invoke<ThemeInfo>(IPC_CHANNELS.themeGet)),
+  setTheme: async (source: ThemeSource) =>
+    themeInfoSchema.parse(
+      await invoke<ThemeInfo>(IPC_CHANNELS.themeSet, themeSourceSchema.parse(source)),
+    ),
 
   onAssistantStream: (listener: (payload: StreamEventPayload) => void) => {
     const handler = (_event: IpcRendererEvent, payload: StreamEventPayload) => {
