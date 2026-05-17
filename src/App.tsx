@@ -57,6 +57,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CompactLauncher } from "@/features/assistant/CompactLauncher";
 import { usePushToTalk } from "@/hooks/usePushToTalk";
 import {
   matchMeetingWorkflow,
@@ -64,12 +65,22 @@ import {
 } from "@/lib/mockMeetingAdapter";
 import { cn, createId, formatClock, normalizePrompt } from "@/lib/utils";
 
-const Launcher = lazy(async () =>
-  import("@/features/assistant/Launcher").then((m) => ({ default: m.Launcher })),
-);
 const Transcript = lazy(async () =>
   import("@/features/assistant/Transcript").then((m) => ({ default: m.Transcript })),
 );
+
+// The whole UI is one surface that morphs between three sizes. Diameters mirror
+// CARD_SIZES in electron/window.ts so the surface always matches its window.
+const ORB_SIZE = 56;
+const SURFACE_SIZE: Record<WindowMode, { w: number; h: number }> = {
+  orb: { w: ORB_SIZE, h: ORB_SIZE },
+  compact: { w: 232, h: 188 },
+  notes: { w: 232, h: 188 },
+  expanded: { w: 768, h: 568 },
+};
+
+// A firm, barely-bouncy spring — the box visibly *morphs* between modes.
+const MORPH = { type: "spring" as const, stiffness: 360, damping: 34, mass: 0.85 };
 
 const STORAGE_KEY = "almanac.timeline.v2";
 
@@ -411,9 +422,12 @@ export default function App() {
     };
   }, []);
 
+  // Grow the OS window the instant we enter chat so the morphing surface has
+  // room to expand into. Shrinking back is deferred to the surface's
+  // onAnimationComplete (below) so it is never clipped mid-collapse.
   useEffect(() => {
     if (!hasBootstrappedRef.current) return;
-    void window.almanac?.setWindowMode(windowMode);
+    if (windowMode === "expanded") void window.almanac?.setWindowMode("expanded");
   }, [windowMode]);
 
   const messageHistory = useMemo(
@@ -638,47 +652,96 @@ export default function App() {
   const isBusy = captureState === "streaming" || captureState === "transcribing";
   const inputDisabled = isBusy;
 
-  // Orb and compact share one fixed-size window: the Launcher morphs the card
-  // in-place, so only the launcher↔expanded swap needs an OS resize. That swap
-  // is what AnimatePresence cross-fades here.
+  // One persistent, top-anchored surface holds every mode. It morphs its own
+  // size between the orb, the compact launcher and the full chat — the three
+  // faces below cross-fade inside it — so chat never feels like a separate
+  // window. The window grows the moment we enter chat (so the surface has room
+  // to expand into) and only shrinks back once the collapse morph finishes.
   return (
-    <div className="fixed inset-0">
-      <AnimatePresence mode="popLayout" initial={false}>
-        {windowMode === "orb" || windowMode === "compact" ? (
-          <motion.div
-            key="launcher"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.14 }}
-            className="h-full w-full"
+    <div className="fixed inset-0 flex justify-center">
+      <motion.div
+        className="launcher-surface relative overflow-hidden"
+        initial={false}
+        animate={{
+          width: SURFACE_SIZE[windowMode].w,
+          height: SURFACE_SIZE[windowMode].h,
+          borderRadius: windowMode === "orb" ? ORB_SIZE / 2 : 16,
+        }}
+        transition={MORPH}
+        onAnimationComplete={() => {
+          if (windowMode !== "expanded") {
+            void window.almanac?.setWindowMode(windowMode);
+          }
+        }}
+      >
+        {/* Orb face — click to spring open into the compact launcher. */}
+        <motion.div
+          data-drag-region="true"
+          role="button"
+          tabIndex={windowMode === "orb" ? 0 : -1}
+          aria-label="Open Alma launcher"
+          aria-hidden={windowMode !== "orb"}
+          initial={false}
+          animate={{ opacity: windowMode === "orb" ? 1 : 0 }}
+          transition={{ duration: 0.16 }}
+          style={{ pointerEvents: windowMode === "orb" ? "auto" : "none" }}
+          className="absolute inset-0 flex items-start justify-center"
+          onClick={() => {
+            if (windowMode === "orb") setWindowMode("compact");
+          }}
+          onKeyDown={(e) => {
+            if (windowMode === "orb" && (e.key === "Enter" || e.key === " ")) {
+              e.preventDefault();
+              setWindowMode("compact");
+            }
+          }}
+        >
+          <div
+            className="relative grid place-items-center"
+            style={{ width: ORB_SIZE, height: ORB_SIZE }}
           >
-            <Suspense fallback={<LazyFallback />}>
-              <Launcher
-                expanded={windowMode === "compact"}
-                onExpand={() => setWindowMode("compact")}
-                compact={{
-                  onCapture: () => void captureScreenshot(),
-                  onOpenChat: () => setWindowMode("expanded"),
-                  onVoice: () => void startVoice(),
-                  onScreenShare: () => void runCaptureSession(),
-                  onNotes: () =>
-                    void window.almanac?.showNotification(MEETING_PROMPT),
-                  voiceEnabled: VOICE_ENABLED,
-                  modKey,
-                }}
-              />
-            </Suspense>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="expanded"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.14 }}
-            className="relative flex h-full w-full flex-col overflow-hidden"
-          >
+            <span className="alma-orb-ring" aria-hidden />
+            <AlmaAvatar size={28} glow={false} />
+          </div>
+        </motion.div>
+
+        {/* Compact face — the launcher shortcuts. */}
+        <motion.div
+          aria-hidden={windowMode !== "compact"}
+          initial={false}
+          animate={{ opacity: windowMode === "compact" ? 1 : 0 }}
+          transition={{ duration: 0.16, delay: windowMode === "compact" ? 0.05 : 0 }}
+          style={{
+            width: SURFACE_SIZE.compact.w,
+            height: SURFACE_SIZE.compact.h,
+            pointerEvents: windowMode === "compact" ? "auto" : "none",
+          }}
+          className="absolute left-1/2 top-0 -translate-x-1/2"
+        >
+          <CompactLauncher
+            onCapture={() => void captureScreenshot()}
+            onOpenChat={() => setWindowMode("expanded")}
+            onVoice={() => void startVoice()}
+            onScreenShare={() => void runCaptureSession()}
+            onNotes={() => void window.almanac?.showNotification(MEETING_PROMPT)}
+            voiceEnabled={VOICE_ENABLED}
+            modKey={modKey}
+          />
+        </motion.div>
+
+        {/* Chat face — the full conversation surface. */}
+        <motion.div
+          aria-hidden={windowMode !== "expanded"}
+          initial={false}
+          animate={{ opacity: windowMode === "expanded" ? 1 : 0 }}
+          transition={{ duration: 0.18, delay: windowMode === "expanded" ? 0.06 : 0 }}
+          style={{
+            width: SURFACE_SIZE.expanded.w,
+            height: SURFACE_SIZE.expanded.h,
+            pointerEvents: windowMode === "expanded" ? "auto" : "none",
+          }}
+          className="absolute left-1/2 top-0 flex -translate-x-1/2 flex-col overflow-hidden"
+        >
         <header
           data-drag-region="true"
           // `glass-header`'s backdrop-filter makes this a stacking context, so
@@ -770,7 +833,7 @@ export default function App() {
                 <Select value={selectedModel} onValueChange={setSelectedModel}>
                   <SelectTrigger
                     aria-label="Chat model"
-                    className="max-w-50 cursor-pointer font-mono text-[10px] uppercase tracking-eyebrow"
+                    className="max-w-50 cursor-pointer font-mono text-[10px] uppercase tracking-eyebrow whitespace-nowrap truncate"
                   >
                     <SelectValue
                       placeholder="Select model"
@@ -875,9 +938,8 @@ export default function App() {
 
           </div>
         </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </motion.div>
+      </motion.div>
     </div>
   );
 }
