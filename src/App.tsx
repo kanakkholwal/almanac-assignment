@@ -658,7 +658,7 @@ export default function App() {
   // window. The window grows the moment we enter chat (so the surface has room
   // to expand into) and only shrinks back once the collapse morph finishes.
   return (
-    <div className="fixed inset-0 flex items-start justify-center">
+    <div className="fixed inset-0 flex items-start justify-center glass-body">
       <motion.div
         className="launcher-surface relative overflow-hidden"
         initial={false}
@@ -676,11 +676,12 @@ export default function App() {
       >
         {/* Orb face — click to spring open into the compact launcher. */}
         <motion.div
-          data-drag-region="true"
+          data-drag-region={windowMode === "orb" ? "true" : undefined}
           role="button"
           tabIndex={windowMode === "orb" ? 0 : -1}
           aria-label="Open Alma launcher"
           aria-hidden={windowMode !== "orb"}
+          inert={windowMode !== "orb"}
           initial={false}
           animate={{ opacity: windowMode === "orb" ? 1 : 0 }}
           transition={{ duration: 0.16 }}
@@ -708,6 +709,7 @@ export default function App() {
         {/* Compact face — the launcher shortcuts. */}
         <motion.div
           aria-hidden={windowMode !== "compact"}
+          inert={windowMode !== "compact"}
           initial={false}
           animate={{ opacity: windowMode === "compact" ? 1 : 0 }}
           transition={{ duration: 0.16, delay: windowMode === "compact" ? 0.05 : 0 }}
@@ -732,6 +734,7 @@ export default function App() {
         {/* Chat face — the full conversation surface. */}
         <motion.div
           aria-hidden={windowMode !== "expanded"}
+          inert={windowMode !== "expanded"}
           initial={false}
           animate={{ opacity: windowMode === "expanded" ? 1 : 0 }}
           transition={{ duration: 0.18, delay: windowMode === "expanded" ? 0.06 : 0 }}
