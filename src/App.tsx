@@ -658,7 +658,7 @@ export default function App() {
   // window. The window grows the moment we enter chat (so the surface has room
   // to expand into) and only shrinks back once the collapse morph finishes.
   return (
-    <div className="fixed inset-0 flex justify-center">
+    <div className="fixed inset-0 flex items-start justify-center">
       <motion.div
         className="launcher-surface relative overflow-hidden"
         initial={false}

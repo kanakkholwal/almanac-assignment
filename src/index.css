@@ -163,29 +163,12 @@
     overflow: hidden;
   }
 
-  /* The OS supplies the blur material (acrylic / vibrancy); #root fills the
-     window and paints the translucent glass tint, the rounded card edge and
-     the edge highlight on top. */
+  /* Every mode (orb, compact, chat) is a single morphing surface that paints
+     its own glass (see .launcher-surface). #root stays fully transparent so no
+     static full-window card snaps in behind the surface mid-morph. */
   #root {
-    background: var(--glass-surface);
     color: var(--color-foreground);
     overflow: hidden;
-    border-radius: 16px;
-    box-shadow:
-      inset 0 0 0 1px var(--glass-edge),
-      inset 0 1px 0 0 var(--edge-highlight);
-  }
-
-  /* Orb & compact share one window: the Launcher card paints its own glass
-     surface and morphs in place, so #root drops its card and stays fully
-     transparent — leaving room for the card's drop shadow. */
-  [data-mode="orb"] #root,
-  [data-mode="compact"] #root {
-    background: transparent;
-    border-color: transparent;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
   }
 
   button, input, textarea, [data-no-drag="true"] {
