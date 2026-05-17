@@ -12,13 +12,15 @@ import type { WindowMode, WindowState } from "../shared/ipc";
 
 import type { PersistedWindowState } from "./window-state";
 
-// Each window mode maps to a real OS window size. The OS window is sized to the
-// visible glass card so the platform blur material (acrylic / vibrancy) covers
-// only the card itself — never a larger transparent stage around it.
+// Each window mode maps to a real OS window size. Orb and compact share one
+// size: the renderer morphs the launcher card in place (orb circle ↔ compact
+// card) inside this window, so hovering never triggers an OS-level resize or
+// window swap — no flicker. Only the launcher↔expanded jump resizes the OS
+// window.
 export const CARD_SIZES: Record<WindowMode, { width: number; height: number }> = {
-  // The orb is the idle launcher: a small circular widget. The window is square
-  // and a touch larger than the orb itself so its drop shadow has room to fall.
-  orb: { width: 128, height: 128 },
+  // The orb is the idle launcher: a small circular widget centred in the
+  // (transparent) compact-sized window so it can spring open without a resize.
+  orb: { width: 232, height: 188 },
   compact: { width: 232, height: 188 },
   notes: { width: 232, height: 188 },
   expanded: { width: 768, height: 568 },
@@ -49,11 +51,9 @@ export function glassWindowOptions(): BrowserWindowConstructorOptions {
     // `transparent: true` disables backgroundMaterial on Windows, so the window
     // stays opaque with a fully transparent background colour instead.
     return {
-      transparent: false,
-      backgroundColor: "#00000000",
-      backgroundMaterial: "acrylic",
+      transparent: true,
       roundedCorners: true,
-      hasShadow: true,
+      hasShadow: false,
     };
   }
   if (isMac) {
@@ -62,30 +62,24 @@ export function glassWindowOptions(): BrowserWindowConstructorOptions {
       vibrancy: "under-window",
       visualEffectState: "active",
       roundedCorners: true,
-      hasShadow: true,
+      hasShadow: false,
     };
   }
   return {
     transparent: true,
     roundedCorners: true,
-    hasShadow: true,
+    hasShadow: false,
   };
 }
 
+// The Almanac brand mark (orange disc + two eyes) as a 64×64 PNG. `nativeImage`
+// cannot rasterise SVG — an SVG data URL silently yields an empty image — so
+// the logo is pre-rendered to PNG and inlined here. Mirrors src/components/Logo.
+const TRAY_ICON_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAC2ElEQVR42u1bO46cQBDtI/QROAJH4AaeG7hTMuTYAYljp86QYwedOCe05ATHTuYCljrbtKw3CwghGPpXu3y6pNJqZ9CbV4/u6qLoFiIZv1EpciqFolLUVApNpWhXXPfX4Nr8yAHLPggEZKgU5OmmxwCWPELgBZWiCQh4y4Fd7DXwljHwube7EIJKkfVDlN7J8dvZewVfBc7vWA4O1VsnOL2DwJdGg3yL5azbYfCDd2zLZx+82XHw0ymRXzX4+CIcMPh4IvQJrztg8NOcIEME0AcOflwdQtZ5OolXPhWeOZEAxqliPMnQ95sK/YMNndQLGwHaEwvQXvnub48C5mbGXrx5VvTQRVwuCaAuJIC6ytJnvySerPDZLIyWnvjoYp7Hmf+fJNGPiuiPJvrbEv1qiL6r189jEOXDV1MBai+QnzXRi6FFw+cgGkKSF78OS4C4ExMzxpDWmuq6fvy93++vX/iS5MafJkLn8hc/OjGQAszclVIP4vS1oF3hz8tiZwH+3UdyILFEbvA8z8n81rQr/CABvuQjuaZpnpIbvKoq+6TFjR8sADJyb1mWWRGUUtoPU278YAGQmfukZENu8PbDTvBjCdB1HasAbPgrAmhXAWAuBLuPch/4K8tg7SPA7XazIoe5bD1HufFXCiHlIwCGKRLQFkEULj4CsOCvlMK5jwDDUvWMJL5/mIcALPhLD0NOj8MzgjCUpShYhmULhPE/7uBongJEx196HHZKhAsErSxAgKj4Txoi6kICKP+m6DkEkP5t8eML0IS9GPl24yXIjb/1emyzLP6cuZND98Z2ePLit3FejqI352IY1i5rNB9+Eef1OO7SWq9ubmhuuD6r8+DruBsk0LjYIglyuM6nZxcX3zhvqbXaIoM7NWtejnMSwzK0dR0Pv+LfJIUsPDjHiwx/fJ22yaWNkmmrbNosnbbLpwMT6chMOjSVjs2lg5Pp6Gw6PJ1sZv8BSefJkDhQa9AAAAAASUVORK5CYII=";
+
 function createTrayIcon() {
-  const svg = `
-   <svg viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="1" y="1" width="54" height="54" rx="27" fill="#ff6900"/>
-    <rect x="1" y="1" width="54" height="54" rx="27" stroke="#ff6900" stroke-width="2"/>
-    <rect x="11" y="23" width="12" height="21" rx="6" fill="white"/>
-    <rect x="13" y="25" width="10" height="10" rx="5" fill="black"/>
-    <rect x="32" y="23" width="12" height="21" rx="6" fill="white"/>
-    <rect x="34" y="25" width="10" height="10" rx="5" fill="black"/>
-</svg>
-`;
-  return nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`,
-  );
+  return nativeImage.createFromDataURL(`data:image/png;base64,${TRAY_ICON_PNG}`);
 }
 
 export function getAppIcon() {

@@ -417,6 +417,8 @@ function closeNotesWindow() {
 const CAPTURE_MAX_EDGE = 1920;
 
 async function captureScreen(): Promise<{ dataUrl: string; width: number; height: number }> {
+  // setContentProtection(true) on the windows prevents them from being captured, so we get a clean screenshot without needing to hide/show them. We just need to ask for a thumbnail small enough that the GPU can handle it.
+
   const display = screen.getPrimaryDisplay();
   const scale = display.scaleFactor || 1;
   const pxW = Math.round(display.size.width * scale);

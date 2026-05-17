@@ -50,7 +50,13 @@ import { AlmaAvatar } from "@/components/AlmaAvatar";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlmaOrb } from "@/features/assistant/AlmaOrb";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { usePushToTalk } from "@/hooks/usePushToTalk";
 import {
   matchMeetingWorkflow,
@@ -58,10 +64,8 @@ import {
 } from "@/lib/mockMeetingAdapter";
 import { cn, createId, formatClock, normalizePrompt } from "@/lib/utils";
 
-const CompactLauncher = lazy(async () =>
-  import("@/features/assistant/CompactLauncher").then((m) => ({
-    default: m.CompactLauncher,
-  })),
+const Launcher = lazy(async () =>
+  import("@/features/assistant/Launcher").then((m) => ({ default: m.Launcher })),
 );
 const Transcript = lazy(async () =>
   import("@/features/assistant/Transcript").then((m) => ({ default: m.Transcript })),
@@ -245,6 +249,16 @@ export default function App() {
   // idle orb is showing (see [data-mode="orb"] in index.css).
   useEffect(() => {
     document.documentElement.dataset.mode = windowMode;
+  }, [windowMode]);
+
+  // Clicking outside the window (anything that takes focus away) collapses the
+  // compact launcher back to the idle orb.
+  useEffect(() => {
+    if (windowMode !== "compact") return;
+    const collapse = () =>
+      setWindowMode((mode) => (mode === "compact" ? "orb" : mode));
+    window.addEventListener("blur", collapse);
+    return () => window.removeEventListener("blur", collapse);
   }, [windowMode]);
 
   useEffect(() => {
@@ -624,36 +638,35 @@ export default function App() {
   const isBusy = captureState === "streaming" || captureState === "transcribing";
   const inputDisabled = isBusy;
 
-  // The OS window is resized to each mode's card by the main process, so the
-  // renderer just fills it; AnimatePresence cross-fades the two layouts.
+  // Orb and compact share one fixed-size window: the Launcher morphs the card
+  // in-place, so only the launcher↔expanded swap needs an OS resize. That swap
+  // is what AnimatePresence cross-fades here.
   return (
     <div className="fixed inset-0">
       <AnimatePresence mode="popLayout" initial={false}>
-        {windowMode === "orb" ? (
-          <AlmaOrb key="orb" onActivate={() => setWindowMode("compact")} />
-        ) : windowMode === "compact" ? (
+        {windowMode === "orb" || windowMode === "compact" ? (
           <motion.div
-            key="compact"
+            key="launcher"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.14 }}
             className="h-full w-full"
-            // Collapse back to the idle orb once the pointer leaves — unless the
-            // user has already opened the expanded chat.
-            onMouseLeave={() =>
-              setWindowMode((mode) => (mode === "compact" ? "orb" : mode))
-            }
           >
             <Suspense fallback={<LazyFallback />}>
-              <CompactLauncher
-                onCapture={() => void captureScreenshot()}
-                onOpenChat={() => setWindowMode("expanded")}
-                onVoice={() => void startVoice()}
-                onScreenShare={() => void runCaptureSession()}
-                onNotes={() => void window.almanac?.showNotification(MEETING_PROMPT)}
-                voiceEnabled={VOICE_ENABLED}
-                modKey={modKey}
+              <Launcher
+                expanded={windowMode === "compact"}
+                onExpand={() => setWindowMode("compact")}
+                compact={{
+                  onCapture: () => void captureScreenshot(),
+                  onOpenChat: () => setWindowMode("expanded"),
+                  onVoice: () => void startVoice(),
+                  onScreenShare: () => void runCaptureSession(),
+                  onNotes: () =>
+                    void window.almanac?.showNotification(MEETING_PROMPT),
+                  voiceEnabled: VOICE_ENABLED,
+                  modKey,
+                }}
               />
             </Suspense>
           </motion.div>
@@ -754,23 +767,26 @@ export default function App() {
             <div className="flex items-center justify-center gap-3 py-4">
               <span className="eyebrow">Today · {currentTime}</span>
               {models.length > 0 ? (
-                <select
-                  data-no-drag="true"
-                  aria-label="Chat model"
-                  value={selectedModel}
-                  onChange={(event) => setSelectedModel(event.target.value)}
-                  className={cn(
-                    "max-w-50 cursor-pointer rounded-pill border border-border bg-transparent px-2.5 py-0.5",
-                    "font-mono text-[10px] uppercase tracking-eyebrow text-foreground/85 outline-none",
-                    "transition-colors hover:bg-hover focus-visible:border-ring",
-                  )}
-                >
-                  {chatModels(models).map((model) => (
-                    <option key={model.id} value={model.id} className="bg-canvas-card">
-                      {model.id}
-                    </option>
-                  ))}
-                </select>
+                <Select value={selectedModel} onValueChange={setSelectedModel}>
+                  <SelectTrigger
+                    aria-label="Chat model"
+                    className="max-w-50 cursor-pointer font-mono text-[10px] uppercase tracking-eyebrow"
+                  >
+                    <SelectValue
+                      placeholder="Select model"
+                      className="min-w-0 flex-1 truncate text-left whitespace-nowrap"
+                    >
+                      {selectedModel || "Select model"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="font-mono text-[11px]">
+                    {chatModels(models).map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               ) : null}
               {captureCount !== null ? (
                 <button

@@ -163,29 +163,24 @@
     overflow: hidden;
   }
 
-  /* The OS supplies the blur material (acrylic / vibrancy) and the rounded
-     corners; #root fills the window and paints the translucent glass tint and
-     edge highlight on top. Rounding #root would leave bare-material notches
-     inside the OS corner clip, so it stays square — except on Linux, which has
-     no native rounding (see below). */
+  /* The OS supplies the blur material (acrylic / vibrancy); #root fills the
+     window and paints the translucent glass tint, the rounded card edge and
+     the edge highlight on top. */
   #root {
     background: var(--glass-surface);
     color: var(--color-foreground);
     overflow: hidden;
+    border-radius: 16px;
     box-shadow:
       inset 0 0 0 1px var(--glass-edge),
       inset 0 1px 0 0 var(--edge-highlight);
   }
 
-  /* Linux has no compositor blur or native rounding — round the panel in CSS. */
-  [data-platform="linux"] #root {
-    border-radius: 16px;
-  }
-
-  /* Idle orb mode: the window is just a stage for the circular widget, so the
-     panel drops its glass card — the orb paints its own circular surface and
-     the surrounding window stays fully transparent for the drop shadow. */
-  [data-mode="orb"] #root {
+  /* Orb & compact share one window: the Launcher card paints its own glass
+     surface and morphs in place, so #root drops its card and stays fully
+     transparent — leaving room for the card's drop shadow. */
+  [data-mode="orb"] #root,
+  [data-mode="compact"] #root {
     background: transparent;
     border-color: transparent;
     box-shadow: none;
@@ -257,32 +252,32 @@
   box-shadow: var(--shadow-card);
 }
 
-/* ── Idle orb launcher ──────────────────────────────────────────────── */
+/* ── Launcher (orb ↔ compact) ────────────────────────────────────────── */
 @keyframes orb-ring-spin {
   to { transform: rotate(1turn); }
 }
 
-/* The widget shell: sized so the drop shadow has room to fall inside the
-   transparent window. The shadow is cast on .alma-orb so it follows the
-   circular silhouette rather than the square box. */
-.alma-orb {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 72px;
-  height: 72px;
-  border-radius: var(--radius-pill);
-  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55));
-  cursor: pointer;
+/* The morphing card. As a circle it is the orb; sprung open it is the compact
+   launcher. It paints its own frosted glass so the window itself stays
+   transparent — the box-shadow follows the animated border-radius, giving the
+   orb a circular drop shadow and the open card a rectangular one. */
+.launcher-surface {
+  background: var(--glass-surface);
+  border: 1px solid var(--glass-edge);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  box-shadow:
+    var(--shadow-card),
+    inset 0 1px 0 0 var(--edge-highlight);
 }
 
-/* Rotating accent border. A conic gradient masked to a thin band so only the
-   ring sweeps — the avatar inside stays still. */
+/* Rotating accent border on the orb face. A conic gradient masked to a thin
+   band so only the ring sweeps — the avatar inside stays still. */
 .alma-orb-ring {
   position: absolute;
   inset: 0;
   border-radius: var(--radius-pill);
-  padding: 3px;
+  padding: 2px;
   background: conic-gradient(
     from 0deg,
     transparent 0deg,
@@ -297,21 +292,6 @@
           mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
           mask-composite: exclude;
   animation: orb-ring-spin 5s linear infinite;
-}
-
-/* The circular face: its own frosted glass surface, blurring the desktop
-   behind the (transparent) window. */
-.alma-orb-core {
-  display: grid;
-  place-items: center;
-  width: 60px;
-  height: 60px;
-  border-radius: var(--radius-pill);
-  background: var(--glass-surface);
-  border: 1px solid var(--edge-highlight);
-  box-shadow: inset 0 1px 0 0 var(--edge-highlight);
-  backdrop-filter: blur(18px) saturate(180%);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
 }
 
 @media (prefers-reduced-motion: reduce) {
