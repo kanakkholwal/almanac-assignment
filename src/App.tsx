@@ -766,7 +766,6 @@ export default function App() {
       >
         {/* Orb face — click to spring open into the compact launcher. */}
         <motion.div
-          data-drag-region={windowMode === "orb" ? "true" : undefined}
           role="button"
           tabIndex={windowMode === "orb" ? 0 : -1}
           aria-label="Open Alma launcher"
@@ -788,13 +787,7 @@ export default function App() {
           }}
         >
           <div
-            // `-webkit-app-region` does not inherit, so the drag region on the
-            // parent doesn't reach the avatar painted on top of it. This class
-            // makes the visible orb and its children draggable in orb mode.
-            className={cn(
-              "relative grid place-items-center",
-              windowMode === "orb" && "alma-orb-drag",
-            )}
+            className="relative grid place-items-center"
             style={{ width: ORB_SIZE, height: ORB_SIZE }}
           >
             <span className="alma-orb-ring" aria-hidden />

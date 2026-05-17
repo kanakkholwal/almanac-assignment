@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { CornerUpLeft, FileText, Reply } from "lucide-react";
+import { CornerLeftDown, CornerUpLeft, FileText, Reply } from "lucide-react";
 import { useMemo } from "react";
 import { Streamdown } from "streamdown";
 
@@ -138,6 +138,26 @@ function ReplyQuote({
   );
 }
 
+/**
+ * The reply-quote shown above an assistant message. Unlike the compact
+ * user-side quote, the assistant side leads with a large curved arrow that
+ * branches down from the quoted message into the reply.
+ */
+function AssistantReplyQuote({ message }: { message: AssistantMessageData }) {
+  return (
+    <div className="mb-1 flex max-w-[80%] items-start gap-1.5 self-start">
+      <CornerLeftDown
+        aria-hidden
+        strokeWidth={1.5}
+        className="size-7 shrink-0 text-muted-foreground/40 mt-3.5"
+      />
+      <span className="mt-1 min-w-0 truncate rounded-xl bg-hover px-3 py-1.5 font-sans text-[12px] text-muted-foreground">
+        {previewOf(message)}
+      </span>
+    </div>
+  );
+}
+
 /** Hover affordance that starts a reply to this message. */
 function ReplyButton({ onClick }: { onClick: () => void }) {
   return (
@@ -230,7 +250,7 @@ function AssistantMessage({
   }
   return (
     <div className="group flex flex-col items-start">
-      {repliedTo ? <ReplyQuote message={repliedTo} align="start" /> : null}
+      {repliedTo ? <AssistantReplyQuote message={repliedTo} /> : null}
       <div className="flex w-full items-start gap-1">
         <Streamdown
           className={cn(
