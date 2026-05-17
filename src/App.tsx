@@ -4,6 +4,7 @@ import {
   ArrowUp,
   Check,
   CheckCircle2,
+  CornerUpLeft,
   HeadphoneOff,
   Headphones,
   LoaderCircle,
@@ -74,8 +75,8 @@ const Transcript = lazy(async () =>
 const ORB_SIZE = 56;
 const SURFACE_SIZE: Record<WindowMode, { w: number; h: number }> = {
   orb: { w: ORB_SIZE, h: ORB_SIZE },
-  compact: { w: 232, h: 134 },
-  notes: { w: 232, h: 134 },
+  compact: { w: 200, h: 134 },
+  notes: { w: 200, h: 134 },
   expanded: { w: 768, h: 568 },
 };
 
@@ -106,6 +107,47 @@ const MEETING_PROMPT = {
   description: "Take notes & get suggestions in real time",
   actionLabel: "Take Notes",
 };
+
+const SYSTEM_PROMPT =
+  "You are Alma, a concise, proactive desktop assistant for meetings, notes, and scheduling. Be terse, warm, and lowercase.";
+
+// After a message is sent, wait this long for the user to stop sending before
+// Alma processes the whole burst — "batch until I pause".
+const BATCH_PAUSE_MS = 1400;
+
+// Stagger between mocked demo replies when a batch matches several workflows.
+const MOCK_REPLY_STAGGER_MS = 320;
+
+// Builds the LLM message list from the timeline, carrying image attachments
+// through as content parts so a batched request keeps every screen capture.
+function buildChatMessages(
+  items: TimelineItem[],
+): { role: "system" | "user" | "assistant"; content: string | ChatContentPart[] }[] {
+  const messages: {
+    role: "system" | "user" | "assistant";
+    content: string | ChatContentPart[];
+  }[] = [{ role: "system", content: SYSTEM_PROMPT }];
+  for (const item of items) {
+    if (item.kind !== "message" || item.message.role === "system") continue;
+    const { role, content, imageUrls } = item.message;
+    const text = content.trim();
+    if (imageUrls && imageUrls.length > 0) {
+      messages.push({
+        role,
+        content: [
+          { type: "text", text: text || "(screen capture)" },
+          ...imageUrls.map((url) => ({
+            type: "image_url" as const,
+            image_url: { url },
+          })),
+        ],
+      });
+    } else if (text) {
+      messages.push({ role, content: text });
+    }
+  }
+  return messages;
+}
 
 // Models that cannot serve /v1/chat/completions — image generation, embeddings,
 // realtime audio, speech. Excluded from the chat picker and fallback selection.
@@ -246,6 +288,9 @@ export default function App() {
   const [attachedImages, setAttachedImages] = useState<string[]>([]);
   const [captureCount, setCaptureCount] = useState<number | null>(null);
   const captureSessionRef = useRef(false);
+  // Id of the message the next send will reply to (null = not replying).
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const batchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deferredTimeline = useDeferredValue(timeline);
 
   useEffect(() => {
@@ -446,18 +491,23 @@ export default function App() {
     };
   }, []);
 
-  const messageHistory = useMemo(
-    () =>
-      timeline
-        .filter((item): item is Extract<TimelineItem, { kind: "message" }> => item.kind === "message")
-        .map((item) => ({ role: item.message.role, content: item.message.content }))
-        .filter((message) => message.content.trim().length > 0),
-    [timeline],
-  );
-
   const appendTimeline = useCallback((items: TimelineItem[]) => {
     setTimeline((current) => [...current, ...items]);
   }, []);
+
+  // The text/preview of the message the composer is replying to.
+  const replyPreview = useMemo(() => {
+    if (!replyTo) return null;
+    const found = timeline.find(
+      (item) => item.kind === "message" && item.message.id === replyTo,
+    );
+    if (!found || found.kind !== "message") return null;
+    const text = found.message.content.trim();
+    if (text) return text;
+    return found.message.imageUrls && found.message.imageUrls.length > 0
+      ? "Image"
+      : "Message";
+  }, [replyTo, timeline]);
 
   const startNotes = useCallback(() => {
     setCaptureState("listening");
@@ -469,79 +519,100 @@ export default function App() {
     return () => off?.();
   }, [startNotes]);
 
+  // Processes every message sent since Alma last replied. Demo workflows still
+  // resolve per message; everything else goes to one LLM call. Each reply is
+  // tagged with `replyToId` so the transcript quotes what it answers.
+  const flushBatch = useCallback(async () => {
+    const items = timelineRef.current;
+    let lastAssistant = -1;
+    items.forEach((item, index) => {
+      if (item.kind === "message" && item.message.role === "assistant") {
+        lastAssistant = index;
+      }
+    });
+    const pending = items
+      .slice(lastAssistant + 1)
+      .flatMap((item) =>
+        item.kind === "message" && item.message.role === "user"
+          ? [item.message]
+          : [],
+      );
+    if (pending.length === 0) return;
+
+    const unmatched: typeof pending = [];
+    let stagger = 0;
+    for (const message of pending) {
+      const hasImages = Boolean(message.imageUrls && message.imageUrls.length > 0);
+      if (DEMO_MODE && !hasImages) {
+        const mocked = matchMeetingWorkflow(message.content);
+        if (mocked) {
+          const tagged = mocked.map((item, index) =>
+            index === 0 && item.kind === "message"
+              ? { ...item, message: { ...item.message, replyToId: message.id } }
+              : item,
+          );
+          const at = stagger;
+          window.setTimeout(() => appendTimeline(tagged), at);
+          stagger += MOCK_REPLY_STAGGER_MS;
+          continue;
+        }
+      }
+      unmatched.push(message);
+    }
+    if (unmatched.length === 0) return;
+
+    const assistantId = createId("assistant");
+    appendTimeline([
+      buildTimelineMessage("assistant", "", {
+        id: assistantId,
+        source: "litellm",
+        replyToId: unmatched[0].id,
+      }),
+    ]);
+    setCaptureState("streaming");
+    streamingMessageIdRef.current = assistantId;
+
+    try {
+      await window.almanac.startChatCompletion({
+        messageId: assistantId,
+        model: selectedModel || pickChatModel(models, runtimeInfo?.config.defaultChatModel),
+        messages: buildChatMessages(timelineRef.current),
+      });
+    } catch (streamError) {
+      setCaptureState("idle");
+      streamingMessageIdRef.current = null;
+      setError(streamError instanceof Error ? streamError.message : "Unable to start chat");
+    }
+  }, [appendTimeline, models, runtimeInfo, selectedModel]);
+
   const sendMessage = useCallback(
-    async (raw: string) => {
+    (raw: string) => {
       const trimmed = normalizePrompt(raw);
       const images = attachedImages;
       if (!trimmed && images.length === 0) return;
 
       setError(null);
-      const promptText =
-        trimmed ||
-        (images.length > 1
-          ? "These frames were captured from my screen over a few seconds. Describe what's happening and anything noteworthy."
-          : "What's on my screen? Briefly describe what you see.");
-
-      const userItem = buildTimelineMessage("user", trimmed, {
-        status: "read",
-        source: "mock",
-        imageUrls: images.length > 0 ? images : undefined,
-      });
-
-      appendTimeline([userItem]);
+      appendTimeline([
+        buildTimelineMessage("user", trimmed, {
+          status: "read",
+          source: "mock",
+          imageUrls: images.length > 0 ? images : undefined,
+          replyToId: replyTo ?? undefined,
+        }),
+      ]);
       setInput("");
       setAttachedImages([]);
+      setReplyTo(null);
 
-      if (DEMO_MODE && images.length === 0) {
-        const mocked = matchMeetingWorkflow(trimmed);
-        if (mocked) {
-          window.setTimeout(() => appendTimeline(mocked), 280);
-          return;
-        }
-      }
-
-      const assistantId = createId("assistant");
-      const placeholder = buildTimelineMessage("assistant", "", {
-        id: assistantId,
-        source: "litellm",
-      });
-
-      appendTimeline([placeholder]);
-      setCaptureState("streaming");
-      streamingMessageIdRef.current = assistantId;
-
-      const userContent: string | ChatContentPart[] =
-        images.length > 0
-          ? [
-              { type: "text", text: promptText },
-              ...images.map((url) => ({
-                type: "image_url" as const,
-                image_url: { url },
-              })),
-            ]
-          : promptText;
-
-      try {
-        await window.almanac.startChatCompletion({
-          messageId: assistantId,
-          model: selectedModel || pickChatModel(models, runtimeInfo?.config.defaultChatModel),
-          messages: [
-            {
-              role: "system",
-              content:
-                "You are Alma, a concise, proactive desktop assistant for meetings, notes, and scheduling. Be terse, warm, and lowercase.",
-            },
-            ...messageHistory,
-            { role: "user", content: userContent },
-          ],
-        });
-      } catch (streamError) {
-        setCaptureState("idle");
-        streamingMessageIdRef.current = null;
-        setError(streamError instanceof Error ? streamError.message : "Unable to start chat");
-      }
+      // Hold off processing until the user pauses — multiple quick sends are
+      // answered together once the timer elapses.
+      if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
+      batchTimerRef.current = setTimeout(() => {
+        batchTimerRef.current = null;
+        void flushBatch();
+      }, BATCH_PAUSE_MS);
     },
-    [appendTimeline, attachedImages, messageHistory, models, runtimeInfo, selectedModel],
+    [appendTimeline, attachedImages, flushBatch, replyTo],
   );
 
   const captureScreenshot = useCallback(async () => {
@@ -602,9 +673,14 @@ export default function App() {
 
   const clearChat = useCallback(() => {
     cancelStreaming();
+    if (batchTimerRef.current) {
+      clearTimeout(batchTimerRef.current);
+      batchTimerRef.current = null;
+    }
     setTimeline([]);
     setInput("");
     setAttachedImages([]);
+    setReplyTo(null);
     setError(null);
   }, [cancelStreaming]);
 
@@ -712,7 +788,13 @@ export default function App() {
           }}
         >
           <div
-            className="relative grid place-items-center"
+            // `-webkit-app-region` does not inherit, so the drag region on the
+            // parent doesn't reach the avatar painted on top of it. This class
+            // makes the visible orb and its children draggable in orb mode.
+            className={cn(
+              "relative grid place-items-center",
+              windowMode === "orb" && "alma-orb-drag",
+            )}
             style={{ width: ORB_SIZE, height: ORB_SIZE }}
           >
             <span className="alma-orb-ring" aria-hidden />
@@ -910,7 +992,10 @@ export default function App() {
               <ScrollArea className="scroll-mask min-h-0 flex-1" viewportRef={viewportRef}>
                 <div className="pb-6 pr-1.5">
                   <Suspense fallback={<LazyFallback />}>
-                    <Transcript items={deferredTimeline} />
+                    <Transcript
+                      items={deferredTimeline}
+                      onReply={(id) => setReplyTo(id)}
+                    />
                   </Suspense>
                 </div>
               </ScrollArea>
@@ -945,9 +1030,11 @@ export default function App() {
               busy={isBusy}
               attachedImages={attachedImages}
               voiceEnabled={VOICE_ENABLED}
+              replyPreview={replyPreview}
               onChange={setInput}
               onSubmit={() => void sendMessage(input)}
               onToggleRecord={() => void toggleRecording()}
+              onCancelReply={() => setReplyTo(null)}
               onRemoveImage={(index) =>
                 setAttachedImages((prev) => prev.filter((_, i) => i !== index))
               }
@@ -970,9 +1057,11 @@ const Composer = memo(
       busy: boolean;
       attachedImages: string[];
       voiceEnabled: boolean;
+      replyPreview: string | null;
       onChange: (v: string) => void;
       onSubmit: () => void;
       onToggleRecord: () => void;
+      onCancelReply: () => void;
       onRemoveImage: (index: number) => void;
     }) {
       const {
@@ -982,14 +1071,35 @@ const Composer = memo(
         busy,
         attachedImages,
         voiceEnabled,
+        replyPreview,
         onChange,
         onSubmit,
         onToggleRecord,
+        onCancelReply,
         onRemoveImage,
       } = props;
       const canSend = (Boolean(value.trim()) || attachedImages.length > 0) && !busy;
       return (
         <div className="flex flex-col gap-2">
+          {replyPreview ? (
+            <div
+              data-no-drag="true"
+              className="flex items-center gap-1.5 self-start rounded-md border border-hairline bg-hover px-2 py-1"
+            >
+              <CornerUpLeft className="size-3 shrink-0 text-muted-foreground" />
+              <span className="max-w-60 truncate font-sans text-[12px] text-muted-foreground">
+                Replying to: {replyPreview}
+              </span>
+              <button
+                type="button"
+                aria-label="Cancel reply"
+                onClick={onCancelReply}
+                className="ml-0.5 flex size-4 shrink-0 items-center justify-center rounded-pill text-foreground/60 transition hover:bg-canvas-mid hover:text-foreground"
+              >
+                <X className="size-2.5" />
+              </button>
+            </div>
+          ) : null}
           {attachedImages.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 self-start" data-no-drag="true">
               {attachedImages.map((img, index) => (

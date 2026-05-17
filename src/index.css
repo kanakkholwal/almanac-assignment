@@ -179,6 +179,15 @@
     -webkit-app-region: drag;
   }
 
+  /* The orb is dragged like a window: the whole visible disc — and the avatar
+     painted on top — is a drag region. `-webkit-app-region` does not inherit,
+     so descendants must be covered explicitly. Scoped to the orb only, so it
+     never makes the chat header's buttons draggable. */
+  .alma-orb-drag,
+  .alma-orb-drag * {
+    -webkit-app-region: drag;
+  }
+
   *:focus-visible {
     outline: none;
   }

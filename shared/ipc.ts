@@ -94,6 +94,9 @@ export const assistantMessageSchema = z.object({
   status: z.enum(["sending", "delivered", "read"]).optional(),
   source: z.enum(["litellm", "mock"]).optional(),
   imageUrls: z.array(z.string()).optional(),
+  // Id of the message this one is a reply to. Optional → older persisted
+  // timelines stay valid; the transcript renders a quoted preview when set.
+  replyToId: z.string().optional(),
 });
 export type AssistantMessage = z.infer<typeof assistantMessageSchema>;
 
