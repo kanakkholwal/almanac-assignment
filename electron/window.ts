@@ -16,13 +16,13 @@ import type { PersistedWindowState } from "./window-state";
 // visible glass card so the platform blur material (acrylic / vibrancy) covers
 // only the card itself — never a larger transparent stage around it.
 export const CARD_SIZES: Record<WindowMode, { width: number; height: number }> = {
+  // The orb is the idle launcher: a small circular widget. The window is square
+  // and a touch larger than the orb itself so its drop shadow has room to fall.
+  orb: { width: 128, height: 128 },
   compact: { width: 232, height: 188 },
   notes: { width: 232, height: 188 },
   expanded: { width: 768, height: 568 },
 };
-
-const isWin = process.platform === "win32";
-const isMac = process.platform === "darwin";
 
 function resolveRendererUrl(): string {
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -35,9 +35,15 @@ function resolvePreloadPath(): string {
   return path.join(__dirname, "preload.js");
 }
 
-// Platform-native translucency: acrylic blur behind the window on Windows 11,
-// vibrancy on macOS. Linux has no portable compositor blur, so the renderer
-// paints a near-opaque glass fallback (see [data-native-blur="false"] in CSS).
+const isWin = process.platform === "win32";
+const isMac = process.platform === "darwin";
+
+// Real glass needs an OS blur material: a transparent window plus CSS
+// `backdrop-filter` only blurs content *inside* the page — it cannot reach the
+// desktop composited behind a transparent window, so the card ends up a flat
+// translucent tint. Acrylic (Windows 11) and vibrancy (macOS) blur the desktop
+// for us. Linux has no portable compositor blur, so it falls back to a
+// near-opaque CSS panel.
 export function glassWindowOptions(): BrowserWindowConstructorOptions {
   if (isWin) {
     // `transparent: true` disables backgroundMaterial on Windows, so the window
@@ -66,19 +72,17 @@ export function glassWindowOptions(): BrowserWindowConstructorOptions {
   };
 }
 
-// True when the OS composites the blur for us; the renderer keeps its glass
-// surfaces translucent. On Linux it falls back to near-opaque panels.
-export function hasNativeBlur(): boolean {
-  return isWin || isMac;
-}
-
 function createTrayIcon() {
   const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-      <rect x="4" y="4" width="56" height="56" rx="18" fill="#0a0a0a" stroke="#212327" stroke-width="1"/>
-      <circle cx="24" cy="32" r="5" fill="#ff7a17"/>
-      <circle cx="40" cy="32" r="5" fill="#ff7a17"/>
-    </svg>`;
+   <svg viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="1" y="1" width="54" height="54" rx="27" fill="#ff6900"/>
+    <rect x="1" y="1" width="54" height="54" rx="27" stroke="#ff6900" stroke-width="2"/>
+    <rect x="11" y="23" width="12" height="21" rx="6" fill="white"/>
+    <rect x="13" y="25" width="10" height="10" rx="5" fill="black"/>
+    <rect x="32" y="23" width="12" height="21" rx="6" fill="white"/>
+    <rect x="34" y="25" width="10" height="10" rx="5" fill="black"/>
+</svg>
+`;
   return nativeImage.createFromDataURL(
     `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`,
   );
@@ -90,7 +94,7 @@ export function getAppIcon() {
 
 export function createMainWindow(initialState: PersistedWindowState): BrowserWindowType {
   const workArea = screen.getPrimaryDisplay().workArea;
-  const size = CARD_SIZES.compact;
+  const size = CARD_SIZES[initialState.mode] ?? CARD_SIZES.compact;
 
   const width = Math.min(size.width, workArea.width - 24);
   const height = Math.min(size.height, workArea.height - 24);

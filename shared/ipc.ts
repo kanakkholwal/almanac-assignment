@@ -36,7 +36,7 @@ export const captureResultSchema = z.object({
 });
 export type CaptureResult = z.infer<typeof captureResultSchema>;
 
-export const windowModeSchema = z.enum(["compact", "notes", "expanded"]);
+export const windowModeSchema = z.enum(["orb", "compact", "notes", "expanded"]);
 export type WindowMode = z.infer<typeof windowModeSchema>;
 
 // Theme follows the OS by default ("system"); the user can pin light or dark

@@ -57,7 +57,7 @@ let mainWindow: BrowserWindowType | null = null;
 let notificationWindow: BrowserWindowType | null = null;
 let notesWindow: BrowserWindowType | null = null;
 let tray: Tray | null = null;
-let windowMode: WindowMode = "compact";
+let windowMode: WindowMode = "orb";
 let alwaysOnTop = true;
 let themeSource: ThemeSource = "system";
 let isQuitting = false;
@@ -251,9 +251,9 @@ function attachWindowLifecycle(win: BrowserWindowType) {
 
 function createWindow() {
   const saved = readWindowState();
-  // The launcher is always the home surface; expanded chat is a transient
-  // "summoned" view. Boot into compact regardless of last-saved mode.
-  saved.mode = "compact";
+  // The idle orb is always the home surface; it morphs into the compact
+  // launcher on hover. Boot into orb regardless of last-saved mode.
+  saved.mode = "orb";
   saved.isMaximized = false;
   windowMode = saved.mode;
   alwaysOnTop = saved.alwaysOnTop;

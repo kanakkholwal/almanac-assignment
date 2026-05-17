@@ -50,6 +50,7 @@ import { AlmaAvatar } from "@/components/AlmaAvatar";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { AlmaOrb } from "@/features/assistant/AlmaOrb";
 import { usePushToTalk } from "@/hooks/usePushToTalk";
 import {
   matchMeetingWorkflow,
@@ -207,7 +208,7 @@ function Banner({
 }
 
 export default function App() {
-  const [windowMode, setWindowMode] = useState<WindowMode>("compact");
+  const [windowMode, setWindowMode] = useState<WindowMode>("orb");
   const [runtimeInfo, setRuntimeInfo] = useState<AppRuntimeInfo | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>(() => loadPersistedTimeline());
   const [input, setInput] = useState("");
@@ -239,6 +240,12 @@ export default function App() {
     const timer = window.setInterval(() => setCurrentTime(formatClock()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  // Expose the active mode on <html> so CSS can strip the glass card while the
+  // idle orb is showing (see [data-mode="orb"] in index.css).
+  useEffect(() => {
+    document.documentElement.dataset.mode = windowMode;
+  }, [windowMode]);
 
   useEffect(() => {
     timelineRef.current = timeline;
@@ -296,9 +303,9 @@ export default function App() {
         setAlwaysOnTop(state.alwaysOnTop);
         setModels(available);
         setSelectedModel(pickChatModel(available, runtime.config.defaultChatModel));
-        const root = document.documentElement;
-        root.dataset.platform = runtime.platform;
-        root.dataset.nativeBlur = runtime.platform === "linux" ? "false" : "true";
+        // Lets CSS match the card radius to each platform's native window
+        // corner rounding (see [data-platform] rules in index.css).
+        document.documentElement.dataset.platform = runtime.platform;
         if (theme) applyResolvedTheme(theme);
         hasBootstrappedRef.current = true;
       })
@@ -622,7 +629,9 @@ export default function App() {
   return (
     <div className="fixed inset-0">
       <AnimatePresence mode="popLayout" initial={false}>
-        {windowMode === "compact" ? (
+        {windowMode === "orb" ? (
+          <AlmaOrb key="orb" onActivate={() => setWindowMode("compact")} />
+        ) : windowMode === "compact" ? (
           <motion.div
             key="compact"
             initial={{ opacity: 0 }}
@@ -630,6 +639,11 @@ export default function App() {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.14 }}
             className="h-full w-full"
+            // Collapse back to the idle orb once the pointer leaves — unless the
+            // user has already opened the expanded chat.
+            onMouseLeave={() =>
+              setWindowMode((mode) => (mode === "compact" ? "orb" : mode))
+            }
           >
             <Suspense fallback={<LazyFallback />}>
               <CompactLauncher
@@ -654,7 +668,11 @@ export default function App() {
           >
         <header
           data-drag-region="true"
-          className="flex items-center justify-between gap-2 border-b border-hairline px-2.5 py-2"
+          // `glass-header`'s backdrop-filter makes this a stacking context, so
+          // the settings popover is confined to the header's layer. Lift the
+          // header above the chat content (z-10) so the popover sits on top
+          // and stays clickable.
+          className="glass-header relative z-20 flex items-center justify-between gap-2 border-b border-hairline px-2.5 py-2"
         >
           <button
             type="button"
@@ -981,12 +999,19 @@ function EmptyChat({
         </p>
       </div>
       <div className="flex flex-col items-stretch gap-2">
-        {EMPTY_CHAT_PROMPTS.map((prompt) => (
-          <button
+        {EMPTY_CHAT_PROMPTS.map((prompt, index) => (
+          <motion.button
             key={prompt}
             type="button"
             data-no-drag="true"
             onClick={() => onPrompt(prompt)}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.3,
+              delay: 0.08 + index * 0.07,
+              ease: [0.22, 1, 0.36, 1],
+            }}
             className={cn(
               "rounded-pill border border-border bg-transparent px-4 py-1.5",
               "font-sans text-[13px] text-foreground/85 transition-colors hover:bg-hover",
@@ -994,7 +1019,7 @@ function EmptyChat({
             )}
           >
             {prompt}
-          </button>
+          </motion.button>
         ))}
         <button
           type="button"
@@ -1029,7 +1054,7 @@ function ShortcutAction({
       data-no-drag="true"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-2 rounded-pill border border-border bg-transparent px-3 py-1.5",
+        "inline-flex items-center gap-2 rounded-pill bg-transparent px-3 py-1.5",
         "font-sans text-[13px] text-foreground transition-colors",
         "hover:bg-hover",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
@@ -1113,6 +1138,7 @@ function SettingsMenu({
       <AnimatePresence>
         {open ? (
           <motion.div
+            data-no-drag="true"
             initial={{ opacity: 0, y: -6, scale: 0.97 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.97 }}

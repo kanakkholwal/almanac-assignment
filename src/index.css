@@ -93,10 +93,12 @@
   --c-ring: rgba(255, 255, 255, 0.45);
   --c-hover: rgba(255, 255, 255, 0.08);
 
-  --glass-surface: rgba(22, 22, 27, 0.62);
+  --glass-surface: rgba(18, 18, 24, 0.72);
+  --glass-header: rgba(255, 255, 255, 0.055);
+  --glass-edge: rgba(255, 255, 255, 0.12);
   --glass-bubble: rgba(255, 255, 255, 0.11);
   --glass-bubble-border: rgba(255, 255, 255, 0.14);
-  --edge-highlight: rgba(255, 255, 255, 0.10);
+  --edge-highlight: rgba(255, 255, 255, 0.14);
   --shadow-card: 0 24px 60px -16px rgba(0, 0, 0, 0.7);
 }
 
@@ -121,19 +123,13 @@
   --c-ring: rgba(0, 0, 0, 0.35);
   --c-hover: rgba(0, 0, 0, 0.055);
 
-  --glass-surface: rgba(250, 250, 252, 0.62);
-  --glass-bubble: rgba(255, 255, 255, 0.58);
-  --glass-bubble-border: rgba(255, 255, 255, 0.85);
-  --edge-highlight: rgba(255, 255, 255, 0.7);
+  --glass-surface: rgba(250, 250, 253, 0.72);
+  --glass-header: rgba(255, 255, 255, 0.5);
+  --glass-edge: rgba(255, 255, 255, 0.75);
+  --glass-bubble: rgba(255, 255, 255, 0.6);
+  --glass-bubble-border: rgba(255, 255, 255, 0.9);
+  --edge-highlight: rgba(255, 255, 255, 0.95);
   --shadow-card: 0 24px 60px -16px rgba(0, 0, 0, 0.3);
-}
-
-/* ── Linux fallback: no compositor blur, so panels go near-opaque ───── */
-[data-native-blur="false"][data-theme="dark"] {
-  --glass-surface: rgba(20, 20, 25, 0.98);
-}
-[data-native-blur="false"][data-theme="light"] {
-  --glass-surface: rgba(247, 247, 250, 0.98);
 }
 
 @keyframes pulse-ring {
@@ -155,6 +151,7 @@
     font-feature-settings: "cv11", "ss01", "ss03";
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    backdrop-filter: blur(32px) saturate(180%);
   }
 
   html, body {
@@ -166,17 +163,34 @@
     overflow: hidden;
   }
 
-  /* The OS window is sized to the card, so #root *is* the glass panel. */
+  /* The OS supplies the blur material (acrylic / vibrancy) and the rounded
+     corners; #root fills the window and paints the translucent glass tint and
+     edge highlight on top. Rounding #root would leave bare-material notches
+     inside the OS corner clip, so it stays square — except on Linux, which has
+     no native rounding (see below). */
   #root {
     background: var(--glass-surface);
     color: var(--color-foreground);
     overflow: hidden;
-    box-shadow: inset 0 0 0 1px var(--edge-highlight);
+    box-shadow:
+      inset 0 0 0 1px var(--glass-edge),
+      inset 0 1px 0 0 var(--edge-highlight);
   }
 
-  /* Linux has no OS-level rounded clipping, so round the panel ourselves. */
+  /* Linux has no compositor blur or native rounding — round the panel in CSS. */
   [data-platform="linux"] #root {
     border-radius: 16px;
+  }
+
+  /* Idle orb mode: the window is just a stage for the circular widget, so the
+     panel drops its glass card — the orb paints its own circular surface and
+     the surrounding window stays fully transparent for the drop shadow. */
+  [data-mode="orb"] #root {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   button, input, textarea, [data-no-drag="true"] {
@@ -219,6 +233,13 @@
   -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
 
+/* Header band — a brighter frosted strip that sets it apart from the body. */
+@utility glass-header {
+  background: var(--glass-header);
+  backdrop-filter: blur(10px) saturate(150%);
+  -webkit-backdrop-filter: blur(10px) saturate(150%);
+}
+
 /* Frosted chat-bubble surface — translucent fill, hairline edge, soft blur. */
 @utility glass-bubble {
   background: var(--glass-bubble);
@@ -234,4 +255,67 @@
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
   box-shadow: var(--shadow-card);
+}
+
+/* ── Idle orb launcher ──────────────────────────────────────────────── */
+@keyframes orb-ring-spin {
+  to { transform: rotate(1turn); }
+}
+
+/* The widget shell: sized so the drop shadow has room to fall inside the
+   transparent window. The shadow is cast on .alma-orb so it follows the
+   circular silhouette rather than the square box. */
+.alma-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-pill);
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55));
+  cursor: pointer;
+}
+
+/* Rotating accent border. A conic gradient masked to a thin band so only the
+   ring sweeps — the avatar inside stays still. */
+.alma-orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-pill);
+  padding: 3px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    var(--color-accent) 120deg,
+    var(--color-accent-soft) 210deg,
+    transparent 320deg
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask-composite: exclude;
+  animation: orb-ring-spin 5s linear infinite;
+}
+
+/* The circular face: its own frosted glass surface, blurring the desktop
+   behind the (transparent) window. */
+.alma-orb-core {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: var(--radius-pill);
+  background: var(--glass-surface);
+  border: 1px solid var(--edge-highlight);
+  box-shadow: inset 0 1px 0 0 var(--edge-highlight);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alma-orb-ring {
+    animation: none;
+  }
 }
